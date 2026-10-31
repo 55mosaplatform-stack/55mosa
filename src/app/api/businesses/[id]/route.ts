@@ -5,6 +5,7 @@ import { logAuditEvent } from "@/lib/audit";
 import { VerificationStatus, Role } from "@prisma/client";
 import { formatBusinessRecord } from "@/lib/format-business";
 import { serializePublicBusiness } from "@/lib/public-serializer";
+import { permanentlyDeleteBusiness } from "@/lib/business-deletion";
 
 export async function GET(
   request: Request,
@@ -33,7 +34,7 @@ export async function GET(
       },
     });
 
-    if (!business) {
+    if (!business || business.status === "ARCHIVED") {
       return NextResponse.json({ error: "Business not found" }, { status: 404 });
     }
 
@@ -234,4 +235,29 @@ export async function PATCH(
     console.error("[Business Update Error]:", error);
     return NextResponse.json({ error: "Failed to update business" }, { status: 500 });
   }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const resolvedParams = await params;
+  const { id } = resolvedParams;
+
+  const auth = await requireAuth([Role.SUPER_ADMIN, Role.COMMUNITY_ADMIN]);
+  if (auth.error || !auth.user) {
+    return NextResponse.json({ error: auth.error || "Unauthorized" }, { status: auth.status || 401 });
+  }
+
+  const result = await permanentlyDeleteBusiness(id, auth.user);
+  if (!result.success) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
+  }
+
+  return NextResponse.json({
+    success: true,
+    deletedId: result.deletedId,
+    businessName: result.businessName,
+    message: `Business "${result.businessName}" permanently deleted.`,
+  });
 }

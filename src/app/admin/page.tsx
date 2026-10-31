@@ -229,6 +229,7 @@ export default function AdminPanelPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordChangeLoading, setPasswordChangeLoading] = useState(false);
   const [passwordChangeMsg, setPasswordChangeMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Rwanda districts list for announcement targeting
   const rwandaDistricts = useMemo(() => {
@@ -709,16 +710,42 @@ export default function AdminPanelPage() {
   };
 
   const handleDeleteBusiness = async (bizId: string, name: string) => {
-    if (!confirm(`Are you sure you want to permanently delete "${name}"? This cannot be undone.`)) return;
+    const confirmed = confirm(
+      `Permanent deletion: This business and its associated public content will be removed. This action cannot be undone.\n\nAre you sure you want to delete "${name}"?`
+    );
+    if (!confirmed) return;
+
     try {
       const res = await fetch("/api/admin", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "DELETE_BUSINESS", businessId: bizId }),
       });
-      if (res.ok) fetchAdminData();
-    } catch (err) {
-      console.warn("Delete business error:", err);
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setActionFeedback({
+          type: "error",
+          text: data.error || "Failed to permanently delete business from database.",
+        });
+        return;
+      }
+
+      // Optimistically remove from displayed list immediately
+      setBusinesses((prev: any[]) => prev.filter((b: any) => b.id !== bizId));
+      setActionFeedback({
+        type: "success",
+        text: `Business "${name}" and all associated public content have been permanently deleted.`,
+      });
+
+      // Synchronize administrative overview data and counters
+      await fetchAdminData();
+    } catch (err: any) {
+      console.error("Delete business error:", err);
+      setActionFeedback({
+        type: "error",
+        text: err?.message || "Network error occurred while attempting to delete business.",
+      });
     }
   };
 
@@ -1626,6 +1653,32 @@ export default function AdminPanelPage() {
       {activeTab === "businesses" && (
         <div className="space-y-4">
           
+          {actionFeedback && (
+            <div
+              className={`p-3.5 rounded-xl border flex items-center justify-between text-xs font-medium animate-in fade-in duration-200 ${
+                actionFeedback.type === "success"
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                  : "bg-rose-50 border-rose-200 text-rose-800"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {actionFeedback.type === "success" ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                )}
+                <span>{actionFeedback.text}</span>
+              </div>
+              <button
+                onClick={() => setActionFeedback(null)}
+                className="text-slate-400 hover:text-slate-600 text-xs font-bold px-1.5 py-0.5 rounded cursor-pointer"
+                title="Dismiss message"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           {/* Controls Bar: Search + Add Business + Refresh */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="relative flex-1 max-w-md">

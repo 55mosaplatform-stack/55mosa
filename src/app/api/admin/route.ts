@@ -6,6 +6,7 @@ import { logAuditEvent } from "@/lib/audit";
 import { VerificationStatus, ReportStatus, Role } from "@prisma/client";
 import { formatBusinessRecord } from "@/lib/format-business";
 import { sendBusinessSMS } from "@/lib/sms";
+import { permanentlyDeleteBusiness } from "@/lib/business-deletion";
 
 export const dynamic = "force-dynamic";
 
@@ -40,11 +41,11 @@ export async function GET() {
       flaggedProductsCount,
       businessesRequiringReviewCount,
     ] = await Promise.all([
-      prisma.business.count(),
-      prisma.business.count({ where: { verificationStatus: { in: [VerificationStatus.AGENT_VERIFIED, VerificationStatus.HIGH_CONFIDENCE] } } }),
-      prisma.business.count({ where: { dataStatus: "DEMO" } }),
-      prisma.business.count({ where: { dataStatus: "RESEARCHED" } }),
-      prisma.business.count({ where: { dataStatus: "VERIFIED" } }),
+      prisma.business.count({ where: { status: { not: "ARCHIVED" } } }),
+      prisma.business.count({ where: { status: { not: "ARCHIVED" }, verificationStatus: { in: [VerificationStatus.AGENT_VERIFIED, VerificationStatus.HIGH_CONFIDENCE] } } }),
+      prisma.business.count({ where: { status: { not: "ARCHIVED" }, dataStatus: "DEMO" } }),
+      prisma.business.count({ where: { status: { not: "ARCHIVED" }, dataStatus: "RESEARCHED" } }),
+      prisma.business.count({ where: { status: { not: "ARCHIVED" }, dataStatus: "VERIFIED" } }),
       prisma.user.count(),
       prisma.user.count({ where: { role: Role.COMMUNITY_AGENT } }),
       prisma.report.count({ where: { status: ReportStatus.OPEN } }),
@@ -79,6 +80,9 @@ export async function GET() {
         include: { actor: { select: { id: true, name: true, role: true } } },
       }),
       prisma.business.findMany({
+        where: {
+          status: { not: "ARCHIVED" },
+        },
         take: 150,
         orderBy: { updatedAt: "desc" },
         include: {
@@ -851,32 +855,17 @@ export async function PATCH(request: Request) {
     }
 
     if (action === "DELETE_BUSINESS" && businessId) {
-      await prisma.$transaction(async (tx) => {
-        // Soft-archive to ensure every record, verification history, and relationship is preserved
-        await tx.business.update({
-          where: { id: businessId },
-          data: { status: "ARCHIVED" },
-        });
+      const result = await permanentlyDeleteBusiness(businessId, adminUser);
+      if (!result.success) {
+        return NextResponse.json({ error: result.error }, { status: result.status });
+      }
 
-        await tx.product.updateMany({
-          where: { businessId },
-          data: { isArchived: true, isAvailable: false },
-        });
-
-        await tx.auditLog.create({
-          data: {
-            actorId: adminUser.id,
-            action: "ADMIN_BUSINESS_ARCHIVED",
-            entityType: "BUSINESS",
-            entityId: businessId,
-            metadata: JSON.stringify({ archivedBy: adminUser.name, note: "Soft-archived to preserve platform data integrity" }),
-          },
-        });
+      return NextResponse.json({
+        success: true,
+        deletedId: result.deletedId,
+        businessName: result.businessName,
+        message: `Business "${result.businessName}" permanently deleted.`,
       });
-
-      revalidatePath("/admin");
-      revalidatePath("/explore");
-      return NextResponse.json({ success: true, deletedId: businessId, archived: true });
     }
 
     return NextResponse.json({ error: "Invalid action or parameters" }, { status: 400 });
