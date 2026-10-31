@@ -60,29 +60,37 @@ export async function verifySessionToken(token: string): Promise<SessionPayload 
  * If rememberMe is true, persists for 30 days. Otherwise, creates a session-duration cookie.
  */
 export async function setSessionCookie(token: string, rememberMe: boolean = true) {
-  const cookieStore = await cookies();
-  const cookieOptions: any = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES === "true",
-    sameSite: "lax",
-    path: "/",
-  };
+  try {
+    const cookieStore = await cookies();
+    const cookieOptions: any = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES === "true",
+      sameSite: "lax",
+      path: "/",
+    };
 
-  if (rememberMe) {
-    cookieOptions.maxAge = 30 * 24 * 60 * 60; // 30 days
-  } else {
-    cookieOptions.maxAge = 24 * 60 * 60; // 1 day
+    if (rememberMe) {
+      cookieOptions.maxAge = 30 * 24 * 60 * 60; // 30 days
+    } else {
+      cookieOptions.maxAge = 24 * 60 * 60; // 1 day
+    }
+
+    cookieStore.set(SESSION_COOKIE_NAME, token, cookieOptions);
+  } catch {
+    // Outside Next.js AsyncLocalStorage context (e.g. test environments)
   }
-
-  cookieStore.set(SESSION_COOKIE_NAME, token, cookieOptions);
 }
 
 /**
  * Clears the session cookie.
  */
 export async function clearSessionCookie() {
-  const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE_NAME);
+  try {
+    const cookieStore = await cookies();
+    cookieStore.delete(SESSION_COOKIE_NAME);
+  } catch {
+    // Outside Next.js AsyncLocalStorage context
+  }
 }
 
 export * from "./crypto";
