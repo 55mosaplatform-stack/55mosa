@@ -8,11 +8,17 @@ import {
 import { parseMtnMoMoSms } from "@/lib/payments/momo-sms";
 import { parseAirtelMoneySms } from "@/lib/payments/airtel-sms";
 import { authenticateWebhookRequest } from "@/lib/payments/bridge-devices";
+import {
+  getPaypackConfig,
+  initiatePaypackCashout,
+  verifyPaypackWebhookSignature,
+} from "@/lib/payments/paypack-adapter";
 
 export const ALLOWED_WEBHOOK_PROVIDERS = [
   "MTN_MOMO",
   "AIRTEL_MONEY",
   "BANK_TRANSFER",
+  "PAYPACK",
 ] as const;
 
 export type AllowedWebhookProvider = (typeof ALLOWED_WEBHOOK_PROVIDERS)[number];
@@ -21,6 +27,7 @@ export async function POST(req: NextRequest) {
   try {
     const rawBody = await req.text();
     const signature =
+      req.headers.get("x-paypack-signature") ||
       req.headers.get("x-signature") ||
       req.headers.get("x-provider-signature") ||
       req.headers.get("x-callback-signature") ||
@@ -39,9 +46,46 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 0. Handle Paypack Cashout (Disbursement to MOSA Airtel receiving SIM 0729974065)
+    if (payload.data?.kind === "CASHOUT") {
+      const cashoutRef = payload.data.ref || payload.data.transaction_id || "CASHOUT-EVENT";
+      const cashoutStatus = payload.data.status || "successful";
+      const cashoutAmount = Number(payload.data.amount || 0);
+      const cashoutPhone = payload.data.client || payload.data.phone || "0729974065";
+
+      await prisma.auditLog.create({
+        data: {
+          action: "PAYPACK_CASHOUT_TO_AIRTEL_RECEIVED",
+          entityType: "RegistrationPayment",
+          entityId: cashoutRef,
+          metadata: JSON.stringify({
+            amount: cashoutAmount,
+            destinationPhone: cashoutPhone,
+            status: cashoutStatus,
+            fee: payload.data.fee,
+            processedAt: payload.data.processed_at || new Date().toISOString(),
+          }),
+        },
+      }).catch(() => null);
+
+      return NextResponse.json({
+        success: true,
+        message: `Paypack cashout of ${cashoutAmount} RWF to Airtel wallet ${cashoutPhone} recorded.`,
+        ref: cashoutRef,
+        status: cashoutStatus,
+      });
+    }
+
     // 1. Strict Provider Allowlist Validation
-    // Reject UNKNOWN, missing, or unsupported providers immediately
-    const rawProvider = (providerParam || payload.provider || "").trim().toUpperCase();
+    // Auto-detect provider if Paypack payload or header is present
+    let rawProvider = (providerParam || payload.provider || "").trim().toUpperCase();
+    if (!rawProvider && payload.data?.provider) {
+      rawProvider = payload.data.provider.toLowerCase() === "airtel" ? "AIRTEL_MONEY" : "MTN_MOMO";
+    }
+    if (!rawProvider && req.headers.get("x-paypack-signature")) {
+      rawProvider = "PAYPACK";
+    }
+
     if (!rawProvider || !ALLOWED_WEBHOOK_PROVIDERS.includes(rawProvider as AllowedWebhookProvider)) {
       return NextResponse.json(
         {
@@ -80,21 +124,42 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const paymentReference =
+    const txRef =
+      payload.providerTransactionRef ||
+      payload.transactionId ||
+      payload.transId ||
+      payload.data?.ref ||
+      parsedSms?.providerTransactionRef;
+
+    let paymentReference =
       payload.paymentReference ||
       payload.reference ||
       payload.externalReference ||
       parsedSms?.paymentReference;
 
-    const providerTransactionRef =
-      payload.providerTransactionRef ||
-      payload.transactionId ||
-      payload.transId ||
-      parsedSms?.providerTransactionRef;
+    // If Paypack webhook without paymentReference, lookup by providerTransactionRef
+    if (!paymentReference && txRef) {
+      const match = await prisma.registrationPayment.findFirst({
+        where: {
+          OR: [
+            { providerTransactionRef: String(txRef) },
+            { paymentReference: String(txRef) },
+          ],
+        },
+        select: { paymentReference: true },
+      });
+      if (match) {
+        paymentReference = match.paymentReference;
+      }
+    }
+
+    const providerTransactionRef = txRef;
 
     const amountPaid =
       payload.amount !== undefined && payload.amount !== null
         ? Number(payload.amount)
+        : payload.data?.amount !== undefined
+        ? Number(payload.data.amount)
         : parsedSms?.amount;
 
     if (!paymentReference || !providerTransactionRef) {
@@ -135,14 +200,15 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. Look up provider config to ensure provider is enabled
+    const lookupProvider = provider === "PAYPACK" ? "AIRTEL_MONEY" : provider;
     let providerConfig = await prisma.paymentProviderConfig.findUnique({
-      where: { provider },
+      where: { provider: lookupProvider },
     });
 
     if (!providerConfig) {
       await getPaymentProviders(false);
       providerConfig = await prisma.paymentProviderConfig.findUnique({
-        where: { provider },
+        where: { provider: lookupProvider },
       });
     }
 
@@ -157,17 +223,27 @@ export async function POST(req: NextRequest) {
     const deviceIdHeader = req.headers.get("x-mosa-device-id") || payload.bridgeDeviceId;
     const authHeader = req.headers.get("authorization");
 
-    const authResult = await authenticateWebhookRequest({
-      rawBody,
-      signature,
-      deviceIdHeader,
-      authHeader,
-      provider,
-    });
+    let isPaypackAuthenticated = false;
+    if (req.headers.get("x-paypack-signature") || provider === "PAYPACK") {
+      isPaypackAuthenticated = verifyPaypackWebhookSignature(
+        rawBody,
+        req.headers.get("x-paypack-signature") || signature
+      );
+    }
+
+    const authResult = isPaypackAuthenticated
+      ? { isAuthenticated: true, authMethod: "PROVIDER_SECRET" as const }
+      : await authenticateWebhookRequest({
+          rawBody,
+          signature,
+          deviceIdHeader,
+          authHeader,
+          provider: lookupProvider,
+        });
 
     if (!authResult.isAuthenticated) {
       console.warn(
-        `[SECURITY WARNING]: Rejected unverified webhook for ${paymentReference} from ${provider}: ${authResult.error}`
+        `[SECURITY WARNING]: Rejected unverified webhook for ${paymentReference} from ${provider}: ${authResult.error || "Invalid signature"}`
       );
       return NextResponse.json(
         { success: false, error: authResult.error || "Invalid cryptographic webhook signature." },
@@ -244,6 +320,18 @@ export async function POST(req: NextRequest) {
       rawPayload: rawBody,
       verifiedBy,
     });
+
+    // 7. Automated Settlement Payout (Cashout) to Airtel Money SIM 0729974065
+    // When enabled, automatically sweeps cleared merchant funds to MOSA's primary Airtel wallet
+    if (getPaypackConfig().autoCashoutEnabled && result.success && !result.alreadyConfirmed) {
+      initiatePaypackCashout({
+        amount: Number(amountPaid),
+        destinationPhone: "0729974065",
+        paymentReference,
+      }).catch((err) => {
+        console.warn(`[PAYPACK_AUTO_CASHOUT_WARN]: ${err.message}`);
+      });
+    }
 
     return NextResponse.json({
       success: true,

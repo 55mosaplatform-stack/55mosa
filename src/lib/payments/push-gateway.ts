@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { confirmPaymentAndActivateBusiness } from "./engine";
+import { initiatePaypackCashin, isPaypackConfigured } from "./paypack-adapter";
 
 export type SupportedPushProvider = "MTN_MOMO" | "AIRTEL_MONEY";
 export type PushPaymentStatus =
@@ -348,6 +349,54 @@ export async function requestMobileMoneyPayment({
       message: "Payment is already confirmed and active.",
       routeInfo,
     };
+  }
+
+  // 2b. Paypack Gateway Push Dispatch (Option A Preferred Pilot)
+  const paypackStatus = isPaypackConfigured();
+  const usePaypack = process.env.USE_PAYPACK_GATEWAY === "true" || paypackStatus.isConfigured;
+
+  if (usePaypack && (provider === "MTN_MOMO" || provider === "AIRTEL_MONEY")) {
+    try {
+      const paypackResult = await initiatePaypackCashin({
+        paymentReference,
+        amount,
+        phoneNumber: carrierCheck.normalizedPhone,
+        description,
+      });
+
+      if (paypackResult.success) {
+        await prisma.registrationPayment.update({
+          where: { id: payment.id },
+          data: {
+            provider,
+            phoneNumber: carrierCheck.normalizedPhone,
+            providerTransactionRef: paypackResult.ref,
+            status: "WAITING_FOR_CUSTOMER_APPROVAL",
+            failureReason: null,
+            rawCallbackPayload: JSON.stringify({
+              gateway: "PAYPACK",
+              ref: paypackResult.ref,
+              dispatchedAt: new Date().toISOString(),
+              phoneNumber: carrierCheck.normalizedPhone,
+              isSimulation: paypackResult.isSimulation,
+              routeInfo,
+            }),
+          },
+        });
+
+        return {
+          success: true,
+          providerRequestId: paypackResult.ref,
+          status: "WAITING_FOR_CUSTOMER_APPROVAL",
+          promptDispatched: true,
+          isSimulation: paypackResult.isSimulation,
+          message: paypackResult.message,
+          routeInfo,
+        };
+      }
+    } catch (err: any) {
+      console.warn(`[PAYPACK_GATEWAY_WARN] Paypack cashin error (${err.message}). Falling back to standard route.`);
+    }
   }
 
   const credStatus = getProviderCredentialStatus(provider);

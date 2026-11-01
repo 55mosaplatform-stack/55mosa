@@ -539,13 +539,18 @@ function verifyHmac(payload: string, signature: string, secret: string): boolean
   if (!signature || !secret) return false;
   try {
     const computed = crypto.createHmac("sha256", secret).update(payload).digest("hex");
-    return crypto.timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(computed, "hex"));
-  } catch {
-    try {
-      const computed = crypto.createHmac("sha256", secret).update(payload).digest("hex");
-      return signature.trim().toLowerCase() === computed.trim().toLowerCase();
-    } catch {
-      return false;
+    if (signature.length === computed.length && crypto.timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(computed, "hex"))) {
+      return true;
     }
+  } catch {}
+  try {
+    const computedBase64 = crypto.createHmac("sha256", secret).update(payload).digest("base64");
+    if (signature.trim() === computedBase64.trim()) return true;
+  } catch {}
+  try {
+    const computed = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+    return signature.trim().toLowerCase() === computed.trim().toLowerCase();
+  } catch {
+    return false;
   }
 }
