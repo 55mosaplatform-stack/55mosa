@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditEvent } from "@/lib/audit";
+import {
+  checkPaymentRateLimit,
+  getRateLimitClientIp,
+  getRateLimitHeaders,
+} from "@/lib/payments/rate-limiter";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -46,6 +51,22 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const clientIp = getRateLimitClientIp(request);
+
+    // Rate Limiting: Max 5 reviews per 60 minutes per IP
+    const ipRateLimit = await checkPaymentRateLimit({
+      key: `review:ip:${clientIp}`,
+      limit: 5,
+      windowSeconds: 3600,
+    });
+
+    if (!ipRateLimit.isAllowed) {
+      return NextResponse.json(
+        { error: "Too many reviews submitted from this location. Please try again later." },
+        { status: 429, headers: getRateLimitHeaders(ipRateLimit) }
+      );
+    }
+
     const body = await request.json();
     const { 
       businessId, 
@@ -56,7 +77,11 @@ export async function POST(request: Request) {
       userRole = "CUSTOMER" 
     } = body;
 
-    if (!businessId || !comment) {
+    const safeComment = typeof comment === "string" ? comment.trim().slice(0, 2000) : "";
+    const safeCommentRw = typeof commentRw === "string" ? commentRw.trim().slice(0, 2000) : safeComment;
+    const safeRating = Math.min(5, Math.max(1, Math.round(Number(rating) || 5)));
+
+    if (!businessId || !safeComment) {
       return NextResponse.json({ error: "Missing businessId or review comment" }, { status: 400 });
     }
 
@@ -69,7 +94,7 @@ export async function POST(request: Request) {
         update: {},
         create: {
           phone: "+250788999888",
-          name: userName,
+          name: typeof userName === "string" ? userName.trim().slice(0, 100) : "Verified Resident",
           role: "CUSTOMER",
           community: "Nyamirambo",
           points: 120,
@@ -85,9 +110,9 @@ export async function POST(request: Request) {
         data: {
           businessId,
           userId,
-          rating: Number(rating) || 5,
-          comment,
-          commentRw: commentRw || comment,
+          rating: safeRating,
+          comment: safeComment,
+          commentRw: safeCommentRw,
           verifiedVisit: true,
         },
         include: {

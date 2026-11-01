@@ -24,8 +24,8 @@ export async function middleware(request: NextRequest) {
 
   // Define protected route segments
   const isAdminRoute = pathname.startsWith("/admin") || pathname.startsWith("/api/admin");
-  const isAgentRoute = pathname.startsWith("/agent");
-  const isOwnerRoute = pathname.startsWith("/owner");
+  const isAgentRoute = pathname.startsWith("/agent") || pathname.startsWith("/api/agent");
+  const isOwnerRoute = pathname.startsWith("/owner") || pathname.startsWith("/api/owner");
 
   if (!isAdminRoute && !isAgentRoute && !isOwnerRoute) {
     return NextResponse.next();
@@ -116,6 +116,8 @@ export const config = {
     "/admin/:path*",
     "/api/admin/:path*",
     "/agent/:path*",
+    "/api/agent/:path*",
     "/owner/:path*",
+    "/api/owner/:path*",
   ],
 };

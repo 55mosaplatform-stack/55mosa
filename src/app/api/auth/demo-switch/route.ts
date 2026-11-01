@@ -72,11 +72,11 @@ export async function POST(request: Request) {
     }
 
     // Production Security Guard:
-    // Prohibit privilege escalation via unauthenticated demo-switch
-    // unless explicitly permitted via ENABLE_DEMO_SWITCH="true" for staging evaluations.
-    if (process.env.ENABLE_DEMO_SWITCH !== "true") {
+    // Prohibit privilege escalation via unauthenticated demo-switch.
+    // Unconditionally forbidden in production environments.
+    if (process.env.NODE_ENV === "production" || process.env.ENABLE_DEMO_SWITCH !== "true") {
       return NextResponse.json(
-        { error: "Demo role switching is disabled in this environment. Authenticate via verified credentials." },
+        { error: "Demo role switching is permanently disabled in this environment. Authenticate via verified credentials." },
         { status: 403 }
       );
     }

@@ -56,9 +56,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!["MTN_MOMO", "AIRTEL_MONEY", "BANK_TRANSFER", "ADMIN_WAIVER", "FREE_PROMOTION"].includes(provider)) {
+    if (!["MTN_MOMO", "AIRTEL_MONEY", "BANK_TRANSFER"].includes(provider)) {
       return NextResponse.json(
-        { success: false, error: "Invalid payment provider specified." },
+        {
+          success: false,
+          error: "Invalid payment provider specified. Permitted channels: MTN_MOMO, AIRTEL_MONEY, BANK_TRANSFER.",
+        },
         { status: 400 }
       );
     }
@@ -93,6 +96,13 @@ export async function POST(req: NextRequest) {
       }
       payerUserId = currentUser.id;
     } else {
+      // For unauthenticated flows (e.g. self-registration checkout), the business MUST be in PENDING status
+      if (business.status !== "PENDING") {
+        return NextResponse.json(
+          { success: false, error: "Authentication required to initiate payments for this business." },
+          { status: 401 }
+        );
+      }
       payerUserId = business.ownerId;
     }
 

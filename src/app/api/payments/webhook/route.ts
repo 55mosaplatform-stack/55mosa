@@ -48,6 +48,30 @@ export async function POST(req: NextRequest) {
 
     // 0. Handle Paypack Cashout (Disbursement to MOSA Airtel receiving SIM 0729974065)
     if (payload.data?.kind === "CASHOUT") {
+      const paypackSig = req.headers.get("x-paypack-signature") || signature;
+      const isSignatureValid = verifyPaypackWebhookSignature(rawBody, paypackSig);
+
+      if (!isSignatureValid) {
+        console.warn("[SECURITY ALERT]: Rejected unverified Paypack CASHOUT webhook with invalid signature.");
+        await prisma.auditLog.create({
+          data: {
+            action: "WEBHOOK_FORGERY_DETECTED",
+            entityType: "RegistrationPayment",
+            entityId: payload.data?.ref || "FORGED_CASHOUT",
+            metadata: JSON.stringify({
+              kind: "CASHOUT",
+              clientIp: req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown",
+              signatureSupplied: !!paypackSig,
+            }),
+          },
+        }).catch(() => null);
+
+        return NextResponse.json(
+          { success: false, error: "Unauthorized: Invalid cryptographic webhook signature for Paypack cashout." },
+          { status: 401 }
+        );
+      }
+
       const cashoutRef = payload.data.ref || payload.data.transaction_id || "CASHOUT-EVENT";
       const cashoutStatus = payload.data.status || "successful";
       const cashoutAmount = Number(payload.data.amount || 0);
@@ -261,6 +285,20 @@ export async function POST(req: NextRequest) {
       console.warn(
         `[SECURITY WARNING]: Rejected unverified webhook for ${paymentReference} from ${provider}: ${authResult.error || "Invalid signature"}`
       );
+      await prisma.auditLog.create({
+        data: {
+          action: "WEBHOOK_SIGNATURE_VERIFICATION_FAILED",
+          entityType: "RegistrationPayment",
+          entityId: paymentReference || "UNKNOWN",
+          metadata: JSON.stringify({
+            provider,
+            txRef,
+            error: authResult.error || "Invalid signature",
+            clientIp: req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown",
+          }),
+        },
+      }).catch(() => null);
+
       return NextResponse.json(
         { success: false, error: authResult.error || "Invalid cryptographic webhook signature." },
         { status: 401 }

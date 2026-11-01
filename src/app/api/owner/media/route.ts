@@ -99,8 +99,37 @@ export async function POST(request: Request) {
     }
 
     const cleanUrl = typeof url === "string" ? url.trim() : "";
-    if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://") && !cleanUrl.startsWith("/") && !cleanUrl.startsWith("data:")) {
-      return NextResponse.json({ error: "Invalid URL scheme. Must be http://, https://, a valid path, or an uploaded data URL." }, { status: 400 });
+    const isHttps = cleanUrl.startsWith("https://");
+    const isRelativePath = cleanUrl.startsWith("/");
+    const isDataUrl = cleanUrl.startsWith("data:");
+
+    if (!isHttps && !isRelativePath && !isDataUrl) {
+      return NextResponse.json(
+        { error: "Invalid URL scheme. Must be https://, a valid absolute path, or an authorized data URL." },
+        { status: 400 }
+      );
+    }
+
+    // Malicious File / Stored XSS Prevention: Validate Data URL MIME Types
+    if (isDataUrl) {
+      const allowedMimePrefixes = [
+        "data:image/jpeg;",
+        "data:image/png;",
+        "data:image/webp;",
+        "data:image/gif;",
+        "data:video/mp4;",
+        "data:video/webm;",
+      ];
+      const isAllowedMime = allowedMimePrefixes.some((prefix) => cleanUrl.toLowerCase().startsWith(prefix));
+      if (!isAllowedMime) {
+        return NextResponse.json(
+          {
+            error:
+              "Unsupported or unsafe data URL format. Only JPEG, PNG, WEBP, GIF images and MP4, WEBM videos are permitted.",
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const business = await prisma.business.findUnique({

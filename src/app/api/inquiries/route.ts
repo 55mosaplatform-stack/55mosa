@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { InquiryType } from "@prisma/client";
+import {
+  checkPaymentRateLimit,
+  getRateLimitClientIp,
+  getRateLimitHeaders,
+} from "@/lib/payments/rate-limiter";
 
 /**
  * POST /api/inquiries
@@ -10,6 +15,22 @@ import { InquiryType } from "@prisma/client";
  */
 export async function POST(request: Request) {
   try {
+    const clientIp = getRateLimitClientIp(request);
+
+    // Rate Limiting: Max 30 interaction inquiries per 60 seconds per IP
+    const ipRateLimit = await checkPaymentRateLimit({
+      key: `inquiry:ip:${clientIp}`,
+      limit: 30,
+      windowSeconds: 60,
+    });
+
+    if (!ipRateLimit.isAllowed) {
+      return NextResponse.json(
+        { error: "Too many interaction requests. Please slow down." },
+        { status: 429, headers: getRateLimitHeaders(ipRateLimit) }
+      );
+    }
+
     const body = await request.json();
     const {
       action = "TELEMETRY",

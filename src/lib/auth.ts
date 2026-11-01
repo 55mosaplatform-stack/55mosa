@@ -2,6 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { prisma } from "./prisma";
 import { Role, User } from "@prisma/client";
 
@@ -64,7 +65,7 @@ export async function setSessionCookie(token: string, rememberMe: boolean = true
     const cookieStore = await cookies();
     const cookieOptions: any = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES === "true",
+      secure: process.env.NODE_ENV === "production" || process.env.SECURE_COOKIES === "true",
       sameSite: "lax",
       path: "/",
     };
@@ -189,8 +190,8 @@ export async function comparePassword(plainText: string, hashed: string): Promis
  */
 export async function createAndSaveOtp(identifier: string): Promise<string> {
   const cleanIdentifier = identifier.toLowerCase().trim();
-  // Secure 4-digit verification code
-  const code = Math.floor(1000 + Math.random() * 9000).toString();
+  // Cryptographically secure 4-digit verification code
+  const code = crypto.randomInt(1000, 10000).toString();
 
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 

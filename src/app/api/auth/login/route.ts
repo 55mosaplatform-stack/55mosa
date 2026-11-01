@@ -4,9 +4,30 @@ import { createAndSaveOtp, comparePassword, createSessionToken, setSessionCookie
 import { normalizeRwandaPhone } from "@/lib/sms/normalize";
 import { sendVerificationEmail, isValidEmail, isEmailConfigured } from "@/lib/email";
 import { logAuditEvent } from "@/lib/audit";
+import {
+  checkPaymentRateLimit,
+  getRateLimitClientIp,
+  getRateLimitHeaders,
+} from "@/lib/payments/rate-limiter";
 
 export async function POST(request: Request) {
   try {
+    const clientIp = getRateLimitClientIp(request);
+
+    // IP-Level Rate Limit: Max 10 login requests per 60 seconds
+    const ipRateLimit = await checkPaymentRateLimit({
+      key: `auth:login:ip:${clientIp}`,
+      limit: 10,
+      windowSeconds: 60,
+    });
+
+    if (!ipRateLimit.isAllowed) {
+      return NextResponse.json(
+        { error: "Too many login attempts. Please wait before retrying." },
+        { status: 429, headers: getRateLimitHeaders(ipRateLimit) }
+      );
+    }
+
     const body = await request.json();
     const { username, phone, email, password, role = "CUSTOMER", rememberMe = true } = body;
 
@@ -45,6 +66,13 @@ export async function POST(request: Request) {
       }
 
       if (!user) {
+        await logAuditEvent({
+          action: "USER_LOGIN_FAILED",
+          entityType: "USER",
+          entityId: rawIdentifier,
+          metadata: { clientIp, reason: "USER_NOT_FOUND" },
+        }).catch(() => null);
+
         return NextResponse.json({ error: "Invalid username, email, or password" }, { status: 401 });
       }
 
@@ -61,6 +89,14 @@ export async function POST(request: Request) {
 
       const isMatch = await comparePassword(password, user.passwordHash);
       if (!isMatch) {
+        await logAuditEvent({
+          actorId: user.id,
+          action: "USER_LOGIN_FAILED",
+          entityType: "USER",
+          entityId: user.id,
+          metadata: { clientIp, reason: "INVALID_PASSWORD" },
+        }).catch(() => null);
+
         return NextResponse.json({ error: "Invalid username, email, or password" }, { status: 401 });
       }
 

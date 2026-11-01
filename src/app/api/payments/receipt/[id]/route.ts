@@ -42,16 +42,21 @@ export async function GET(
       );
     }
 
-    // Role and ownership check
-    if (currentUser) {
-      const isAdmin = ["SUPER_ADMIN", "COMMUNITY_ADMIN"].includes(currentUser.role);
-      const isOwner = receipt.business.ownerId === currentUser.id;
-      if (!isAdmin && !isOwner) {
-        return NextResponse.json(
-          { success: false, error: "Unauthorized access to this receipt." },
-          { status: 403 }
-        );
-      }
+    // Strict authentication and ownership authorization gate
+    if (!currentUser) {
+      return NextResponse.json(
+        { success: false, error: "Authentication required to access receipt records." },
+        { status: 401 }
+      );
+    }
+
+    const isAdmin = ["SUPER_ADMIN", "COMMUNITY_ADMIN"].includes(currentUser.role);
+    const isOwner = receipt.business.ownerId === currentUser.id;
+    if (!isAdmin && !isOwner) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized access to this receipt. You do not own this business." },
+        { status: 403 }
+      );
     }
 
     return NextResponse.json({

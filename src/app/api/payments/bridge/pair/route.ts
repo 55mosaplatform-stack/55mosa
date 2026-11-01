@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { completeDevicePairing } from "@/lib/payments/bridge-devices";
+import {
+  checkPaymentRateLimit,
+  getRateLimitClientIp,
+  getRateLimitHeaders,
+} from "@/lib/payments/rate-limiter";
 
 /**
  * Public terminal pairing endpoint called by the newly installed Android Bridge app.
@@ -8,6 +13,25 @@ import { completeDevicePairing } from "@/lib/payments/bridge-devices";
  */
 export async function POST(req: NextRequest) {
   try {
+    const clientIp = getRateLimitClientIp(req);
+
+    // Rate Limiting: Max 5 pairing attempts per 5 minutes per IP to prevent brute-force attacks
+    const ipRateLimit = await checkPaymentRateLimit({
+      key: `bridge:pair:${clientIp}`,
+      limit: 5,
+      windowSeconds: 300,
+    });
+
+    if (!ipRateLimit.isAllowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Too many pairing attempts from this IP address. Please wait before retrying.",
+        },
+        { status: 429, headers: getRateLimitHeaders(ipRateLimit) }
+      );
+    }
+
     const body = await req.json();
     const { pairingCode, deviceHardwareId, appVersion } = body;
 
