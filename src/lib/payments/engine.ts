@@ -387,11 +387,20 @@ export async function confirmPaymentAndActivateBusiness({
     periodEnd = new Date(periodStart.getTime() + 365 * 24 * 60 * 60 * 1000);
   }
 
-  // 5. Generate unique numbered receipt
+  // 5. Generate collision-resistant unique numbered receipt
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const receiptCount = await prisma.registrationReceipt.count();
   const seqNum = String(receiptCount + 1).padStart(5, "0");
-  const receiptNumber = `MOSA-REC-${dateStr}-${seqNum}`;
+  const entropy = Math.floor(Math.random() * 9000 + 1000);
+  let receiptNumber = `MOSA-REC-${dateStr}-${seqNum}`;
+
+  const existingReceipt = await prisma.registrationReceipt.findUnique({
+    where: { receiptNumber },
+    select: { id: true },
+  });
+  if (existingReceipt) {
+    receiptNumber = `MOSA-REC-${dateStr}-${seqNum}-${entropy}`;
+  }
 
   // 6. Execute atomic transaction: update payment, create receipt, activate/renew business
   const result = await prisma.$transaction(async (tx) => {
