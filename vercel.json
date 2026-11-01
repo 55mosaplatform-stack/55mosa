@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/settlement-sweep",
+      "schedule": "59 21 * * *"
+    },
+    {
+      "path": "/api/admin/renewals/cron",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}

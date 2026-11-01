@@ -226,9 +226,12 @@ async function runPaypackSuite() {
 
     assert.strictEqual(cashoutRes.success, true);
     assert.strictEqual(cashoutRes.destinationPhone, "0729974065");
-    assert.strictEqual(cashoutRes.status, "successful");
+    assert(
+      cashoutRes.status === "pending" || cashoutRes.status === "successful",
+      `Expected status pending or successful, got ${cashoutRes.status}`
+    );
     assert(cashoutRes.ref.length > 5);
-    logPass(`Payout of ${pMtn.feeAmount ?? 5000} RWF successfully directed to Airtel SIM 0729974065 (Ref: ${cashoutRes.ref})`);
+    logPass(`Payout of ${pMtn.feeAmount ?? 5000} RWF successfully directed to Airtel SIM 0729974065 (Ref: ${cashoutRes.ref}, Status: ${cashoutRes.status})`);
 
     // Verify cashout webhook audit recording
     const cashoutWebhookPayload = {

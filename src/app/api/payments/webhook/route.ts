@@ -51,7 +51,19 @@ export async function POST(req: NextRequest) {
       const cashoutRef = payload.data.ref || payload.data.transaction_id || "CASHOUT-EVENT";
       const cashoutStatus = payload.data.status || "successful";
       const cashoutAmount = Number(payload.data.amount || 0);
-      const cashoutPhone = payload.data.client || payload.data.phone || "0729974065";
+      const cashoutFee = payload.data.fee !== undefined ? Number(payload.data.fee) : undefined;
+      const cashoutPhone = payload.data.client || payload.data.number || payload.data.phone || "0729974065";
+      const processedAt = payload.data.processed_at || payload.data.created_at || new Date().toISOString();
+
+      const { confirmSweepFromProviderWebhook } = await import("@/lib/payments/paypack-settlement");
+      const sweepConfirm = await confirmSweepFromProviderWebhook({
+        payoutRef: cashoutRef,
+        status: cashoutStatus,
+        amount: cashoutAmount,
+        fee: cashoutFee,
+        destinationPhone: cashoutPhone,
+        processedAt,
+      });
 
       await prisma.auditLog.create({
         data: {
@@ -62,17 +74,21 @@ export async function POST(req: NextRequest) {
             amount: cashoutAmount,
             destinationPhone: cashoutPhone,
             status: cashoutStatus,
-            fee: payload.data.fee,
-            processedAt: payload.data.processed_at || new Date().toISOString(),
+            fee: cashoutFee,
+            sweepMatched: sweepConfirm.matched,
+            sweepStatus: sweepConfirm.status,
+            processedAt,
           }),
         },
       }).catch(() => null);
 
       return NextResponse.json({
         success: true,
-        message: `Paypack cashout of ${cashoutAmount} RWF to Airtel wallet ${cashoutPhone} recorded.`,
+        message: `Paypack cashout of ${cashoutAmount} RWF to Airtel wallet ${cashoutPhone} processed (Status: ${cashoutStatus}).`,
         ref: cashoutRef,
         status: cashoutStatus,
+        sweepMatched: sweepConfirm.matched,
+        sweepStatus: sweepConfirm.status,
       });
     }
 

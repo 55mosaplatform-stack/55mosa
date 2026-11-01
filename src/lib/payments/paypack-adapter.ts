@@ -33,6 +33,7 @@ export interface PaypackCashoutResult {
   amount: number;
   destinationPhone: string;
   fee?: number;
+  idempotencyKey?: string;
   isSimulation: boolean;
   message: string;
   rawResponse?: any;
@@ -57,6 +58,20 @@ export interface PaypackWebhookPayload {
 }
 
 let cachedAuthToken: { token: string; expiresAt: number } | null = null;
+
+/**
+ * Generates an RFC-compliant, persistent Idempotency-Key for Paypack.
+ * Paypack strictly enforces a MAXIMUM length of 32 characters.
+ */
+export function generatePaypackIdempotencyKey(prefix: string, seed: string): string {
+  const cleanPrefix = prefix.replace(/[^a-zA-Z0-9_-]/g, "");
+  const cleanSeed = seed.replace(/[^a-zA-Z0-9_-]/g, "");
+  const combined = `${cleanPrefix}${cleanSeed}`;
+  if (combined.length <= 32) return combined;
+  // If longer than 32 chars, hash the seed with SHA-256 and truncate
+  const hash = crypto.createHash("sha256").update(cleanSeed).digest("hex").slice(0, 16);
+  return `${cleanPrefix}${hash}`.slice(0, 32);
+}
 
 /**
  * Returns Paypack operational configuration from environment variables.
@@ -186,7 +201,7 @@ export async function initiatePaypackCashin({
           "Content-Type": "application/json",
           Accept: "application/json",
           Authorization: `Bearer ${token}`,
-          "Idempotency-Key": paymentReference,
+          "Idempotency-Key": generatePaypackIdempotencyKey("CIN-", paymentReference),
           "X-Webhook-Mode": config.environment,
         },
         body: JSON.stringify({
@@ -265,15 +280,20 @@ export async function initiatePaypackCashin({
 /**
  * Initiates an automated Cashout (payout/settlement) from Paypack merchant balance
  * directly into MOSA's registered Airtel Money receiving SIM (0729974065).
+ * Strictly enforces Paypack's 32-character maximum Idempotency-Key.
  */
 export async function initiatePaypackCashout({
   amount,
   destinationPhone,
   paymentReference,
+  sweepReference,
+  initialSimulatedStatus = "pending",
 }: {
   amount: number;
   destinationPhone?: string;
   paymentReference?: string;
+  sweepReference?: string;
+  initialSimulatedStatus?: "pending" | "successful";
 }): Promise<PaypackCashoutResult> {
   const config = getPaypackConfig();
   const targetPhone = destinationPhone || config.cashoutDestinationPhone;
@@ -285,12 +305,13 @@ export async function initiatePaypackCashout({
     process.env.NODE_ENV !== "production";
 
   const { isConfigured, missingRequirements } = isPaypackConfigured();
+  const seedKey = sweepReference || paymentReference || `SWP-${Date.now()}`;
+  const idempotencyKey = generatePaypackIdempotencyKey("SWP-", seedKey);
 
   // 1. Live Provider Mode
   if (isConfigured) {
     try {
       const token = await getPaypackAuthToken();
-      const idempotencyKey = paymentReference ? `cashout-${paymentReference}` : `cashout-${Date.now()}`;
 
       const res = await fetch(`${config.baseUrl}/transactions/cashout`, {
         method: "POST",
@@ -303,6 +324,7 @@ export async function initiatePaypackCashout({
         },
         body: JSON.stringify({
           amount: Math.round(amount),
+          number: cleanPhone,
           phone: cleanPhone,
         }),
         signal: AbortSignal.timeout(12000),
@@ -322,8 +344,9 @@ export async function initiatePaypackCashout({
         amount,
         destinationPhone: cleanPhone,
         fee: data.fee !== undefined ? Number(data.fee) : undefined,
+        idempotencyKey,
         isSimulation: false,
-        message: `Payout of ${amount} RWF to Airtel wallet ${cleanPhone} submitted successfully.`,
+        message: `Payout of ${amount} RWF to Airtel wallet ${cleanPhone} submitted (Status: ${data.status || "pending"}).`,
         rawResponse: data,
       };
     } catch (err: any) {
@@ -342,6 +365,7 @@ export async function initiatePaypackCashout({
       status: "failed",
       amount,
       destinationPhone: cleanPhone,
+      idempotencyKey,
       isSimulation: false,
       message: `Cannot execute cashout: Paypack credentials missing (${missingRequirements.join(", ")})`,
     };
@@ -352,16 +376,17 @@ export async function initiatePaypackCashout({
   return {
     success: true,
     ref: simulatedOutRef,
-    status: "successful",
+    status: initialSimulatedStatus,
     amount,
     destinationPhone: cleanPhone,
-    fee: Math.round(amount * 0.012),
+    fee: undefined, // Do not hardcode a fee unless confirmed by Paypack
+    idempotencyKey,
     isSimulation: true,
-    message: `[SANDBOX] Payout of ${amount} RWF to ${cleanPhone} simulated successfully.`,
+    message: `[SANDBOX] Payout of ${amount} RWF to ${cleanPhone} initiated (Status: ${initialSimulatedStatus}).`,
     rawResponse: {
       simulated: true,
       ref: simulatedOutRef,
-      status: "successful",
+      status: initialSimulatedStatus,
       amount,
       phone: cleanPhone,
       created_at: new Date().toISOString(),
@@ -468,7 +493,10 @@ export async function queryPaypackTransaction(ref: string): Promise<{
   found: boolean;
   status: "successful" | "failed" | "pending" | "not_found";
   amount?: number;
+  fee?: number;
+  ref?: string;
   client?: string;
+  destinationPhone?: string;
   provider?: string;
   rawResponse?: any;
 }> {
@@ -498,7 +526,10 @@ export async function queryPaypackTransaction(ref: string): Promise<{
         found: true,
         status: status === "successful" ? "successful" : status === "failed" ? "failed" : "pending",
         amount: data.amount !== undefined ? Number(data.amount) : undefined,
-        client: data.client,
+        fee: data.fee !== undefined ? Number(data.fee) : undefined,
+        ref: data.ref || ref,
+        client: data.client || data.number || data.phone,
+        destinationPhone: data.client || data.number || data.phone,
         provider: data.provider,
         rawResponse: data,
       };
@@ -507,7 +538,7 @@ export async function queryPaypackTransaction(ref: string): Promise<{
     }
   }
 
-  // Check database if ref was recorded in simulated transactions
+  // 1. Check database if ref was recorded in customer payments
   const dbPayment = await prisma.registrationPayment.findFirst({
     where: {
       OR: [
@@ -517,24 +548,65 @@ export async function queryPaypackTransaction(ref: string): Promise<{
     },
   });
 
-  if (!dbPayment) {
-    return { found: false, status: "not_found" };
+  if (dbPayment) {
+    const statusMap: Record<string, "successful" | "failed" | "pending"> = {
+      CONFIRMED: "successful",
+      FAILED: "failed",
+      CANCELLED: "failed",
+      EXPIRED: "failed",
+      PENDING: "pending",
+      WAITING_FOR_CUSTOMER_APPROVAL: "pending",
+    };
+
+    return {
+      found: true,
+      status: statusMap[dbPayment.status] || "pending",
+      amount: dbPayment.feeAmount,
+      ref: dbPayment.providerTransactionRef || dbPayment.paymentReference,
+      client: dbPayment.phoneNumber || undefined,
+      destinationPhone: dbPayment.phoneNumber || undefined,
+      provider: dbPayment.provider,
+    };
   }
 
-  const statusMap: Record<string, "successful" | "failed" | "pending"> = {
-    CONFIRMED: "successful",
-    FAILED: "failed",
-    CANCELLED: "failed",
-    EXPIRED: "failed",
-    PENDING: "pending",
-    WAITING_FOR_CUSTOMER_APPROVAL: "pending",
-  };
+  // 2. Check AuditLog for settlement sweep
+  const sweepLog = await prisma.auditLog.findFirst({
+    where: {
+      entityType: "SETTLEMENT_SWEEP",
+      OR: [
+        { entityId: ref },
+        { metadata: { contains: ref } },
+      ],
+    },
+    orderBy: { createdAt: "desc" },
+  });
 
-  return {
-    found: true,
-    status: statusMap[dbPayment.status] || "pending",
-    amount: dbPayment.feeAmount,
-    client: dbPayment.phoneNumber || undefined,
-    provider: dbPayment.provider,
-  };
+  if (sweepLog && sweepLog.metadata) {
+    try {
+      const meta = JSON.parse(sweepLog.metadata);
+      const isConfirmed =
+        sweepLog.action === "SWEEP_PROVIDER_CONFIRMED" ||
+        sweepLog.action === "SWEEP_RECONCILED" ||
+        meta.status === "CASHOUT_PROVIDER_CONFIRMED" ||
+        meta.status === "WALLET_RECEIPT_MATCHED" ||
+        meta.status === "RECONCILED" ||
+        meta.status === "SUCCESSFUL";
+      const isFailed = sweepLog.action === "SWEEP_FAILED" || meta.status === "CASHOUT_FAILED";
+
+      return {
+        found: true,
+        status: isConfirmed ? "successful" : isFailed ? "failed" : "pending",
+        amount: meta.amount,
+        fee: meta.fee,
+        ref: meta.payoutRef || meta.sweepReference,
+        client: meta.destinationPhone,
+        destinationPhone: meta.destinationPhone,
+        provider: "AIRTEL_MONEY",
+      };
+    } catch {
+      // Continue
+    }
+  }
+
+  return { found: false, status: "not_found" };
 }

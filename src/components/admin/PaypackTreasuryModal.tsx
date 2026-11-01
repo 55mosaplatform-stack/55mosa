@@ -5,19 +5,26 @@ import {
   X,
   RefreshCw,
   Coins,
-  ArrowDownRight,
   ShieldCheck,
   AlertTriangle,
   Sliders,
   Send,
   CheckCircle2,
   Clock,
-  Sparkles,
+  Radio,
   Info,
-  DollarSign,
-  ArrowRight,
   TrendingUp,
+  Lock,
+  ShieldAlert,
 } from "lucide-react";
+
+export type SweepStatus =
+  | "CASHOUT_PENDING"
+  | "CASHOUT_PROVIDER_CONFIRMED"
+  | "WALLET_RECEIPT_MATCHED"
+  | "RECONCILED"
+  | "CASHOUT_FAILED"
+  | "CASHOUT_REQUIRES_REVIEW";
 
 interface TreasuryStats {
   clearedMerchantBalance: number;
@@ -38,28 +45,47 @@ interface TreasuryStats {
     scheduleTime: string;
     maxDailySweeps: number;
     minSweepAmount: number;
+    sweepMode?: "FULL_BALANCE" | "EXACT_THRESHOLD";
+    reserveAmount?: number;
   };
 }
 
 interface SweepHistoryRecord {
   id: string;
   sweepReference: string;
+  idempotencyKey?: string;
   payoutRef: string | null;
   amount: number;
   fee: number;
   netAmount: number;
   destinationPhone: string;
   destinationProvider: string;
-  status: "PENDING" | "PROCESSING" | "SUCCESSFUL" | "FAILED" | "RECONCILED";
+  status: SweepStatus;
   triggerType: "AUTOMATIC_THRESHOLD" | "AUTOMATIC_SCHEDULED" | "MANUAL_EMERGENCY";
   triggeredByName?: string | null;
+  purpose?: string | null;
   clearedBalanceBefore: number;
   clearedBalanceAfter: number;
   failureReason?: string | null;
   smsBridgeEvidenceRef?: string | null;
+  isFeeEstimated?: boolean;
   createdAt: string;
   settledAt?: string | null;
   isSimulation: boolean;
+}
+
+interface SweepPreview {
+  clearedBalance: number;
+  reserveAmount: number;
+  sweepMode: "FULL_BALANCE" | "EXACT_THRESHOLD";
+  sweepAmount: number;
+  estimatedFee: number;
+  isFeeEstimated: boolean;
+  expectedNetPayout: number;
+  destinationPhone: string;
+  destinationName: string;
+  isEligible: boolean;
+  ineligibilityReason?: string;
 }
 
 interface PaypackTreasuryModalProps {
@@ -72,17 +98,20 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
   const [actionLoading, setActionLoading] = useState(false);
   const [stats, setStats] = useState<TreasuryStats | null>(null);
   const [history, setHistory] = useState<SweepHistoryRecord[]>([]);
+  const [preview, setPreview] = useState<SweepPreview | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Config Form
   const [thresholdInput, setThresholdInput] = useState<number>(50000);
   const [scheduleTimeInput, setScheduleTimeInput] = useState<string>("23:59");
-  const [autoSweepInput, setAutoSweepInput] = useState<boolean>(true);
-  const [destinationPhoneInput, setDestinationPhoneInput] = useState<string>("0729974065");
+  const [autoSweepInput, setAutoSweepInput] = useState<boolean>(false);
+  const [sweepModeInput, setSweepModeInput] = useState<"FULL_BALANCE" | "EXACT_THRESHOLD">("FULL_BALANCE");
+  const [reserveAmountInput, setReserveAmountInput] = useState<number>(0);
 
-  // Emergency sweep confirmation
+  // Emergency sweep confirmation & purpose
   const [showConfirmSweep, setShowConfirmSweep] = useState(false);
+  const [emergencyPurpose, setEmergencyPurpose] = useState<string>("Emergency Treasury Payout to Airtel");
 
   useEffect(() => {
     if (isOpen) {
@@ -99,11 +128,13 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
       if (data.success) {
         setStats(data.stats);
         setHistory(data.history || []);
+        setPreview(data.preview || null);
         if (data.config) {
           setThresholdInput(data.config.threshold || 50000);
           setScheduleTimeInput(data.config.scheduleTime || "23:59");
-          setAutoSweepInput(data.config.autoSweepEnabled !== false);
-          setDestinationPhoneInput(data.config.destinationPhone || "0729974065");
+          setAutoSweepInput(Boolean(data.config.autoSweepEnabled));
+          setSweepModeInput(data.config.sweepMode === "EXACT_THRESHOLD" ? "EXACT_THRESHOLD" : "FULL_BALANCE");
+          setReserveAmountInput(Number(data.config.reserveAmount || 0));
         }
       } else {
         setErrorMessage(data.error || "Failed to load settlement data.");
@@ -128,7 +159,8 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
           threshold: Number(thresholdInput),
           scheduleTime: scheduleTimeInput,
           autoSweepEnabled: autoSweepInput,
-          destinationPhone: destinationPhoneInput,
+          sweepMode: sweepModeInput,
+          reserveAmount: Number(reserveAmountInput),
         }),
       });
       const data = await res.json();
@@ -146,6 +178,11 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
   };
 
   const handleTriggerEmergencySweep = async () => {
+    if (!emergencyPurpose || emergencyPurpose.trim().length < 5) {
+      setErrorMessage("Please enter an administrative purpose (minimum 5 characters) for the emergency payout.");
+      return;
+    }
+
     setActionLoading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -156,11 +193,12 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "TRIGGER_EMERGENCY_SWEEP",
+          purpose: emergencyPurpose.trim(),
         }),
       });
       const data = await res.json();
       if (data.success) {
-        setSuccessMessage(data.message || "Emergency sweep executed successfully!");
+        setSuccessMessage(data.message || "Emergency sweep dispatched successfully!");
         await fetchTreasuryData();
       } else {
         setErrorMessage(data.error || "Emergency sweep failed.");
@@ -169,6 +207,54 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
       setErrorMessage(err.message || "Failed to execute emergency sweep.");
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const renderStatusBadge = (status: SweepStatus) => {
+    switch (status) {
+      case "RECONCILED":
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+            <ShieldCheck className="w-3 h-3 text-emerald-600" />
+            <span>RECONCILED</span>
+          </span>
+        );
+      case "WALLET_RECEIPT_MATCHED":
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1">
+            <Radio className="w-3 h-3 text-purple-600" />
+            <span>WALLET_MATCHED</span>
+          </span>
+        );
+      case "CASHOUT_PROVIDER_CONFIRMED":
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3 text-blue-600" />
+            <span>PROVIDER_CONFIRMED</span>
+          </span>
+        );
+      case "CASHOUT_PENDING":
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+            <Clock className="w-3 h-3 text-amber-600 animate-spin" />
+            <span>CASHOUT_PENDING</span>
+          </span>
+        );
+      case "CASHOUT_REQUIRES_REVIEW":
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800 border border-red-300 flex items-center gap-1">
+            <ShieldAlert className="w-3 h-3 text-red-600" />
+            <span>REQUIRES_REVIEW</span>
+          </span>
+        );
+      case "CASHOUT_FAILED":
+      default:
+        return (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3 text-rose-600" />
+            <span>FAILED</span>
+          </span>
+        );
     }
   };
 
@@ -188,12 +274,17 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
               <div className="flex items-center gap-2">
                 <h3 className="font-black text-base tracking-tight">MOSA Treasury &amp; Airtel Settlement Sweeps</h3>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  Option A Active
+                  Option A
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-600">
+                  Strategy 2 Production Safety
                 </span>
               </div>
-              <p className="text-xs text-slate-300 mt-0.5">
-                Automated threshold &amp; daily batch payouts settling into MOSA Airtel Money:{" "}
-                <strong className="text-emerald-400 font-mono">0729974065</strong>
+              <p className="text-xs text-slate-300 mt-0.5 flex items-center gap-1.5">
+                <span>Receiving Destination (Locked):</span>
+                <strong className="text-emerald-400 font-mono flex items-center gap-1">
+                  <Lock className="w-3 h-3 text-emerald-400" /> 0729974065 (Airtel Money)
+                </strong>
               </p>
             </div>
           </div>
@@ -256,7 +347,7 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
                 <span className="text-xs font-bold text-slate-500">RWF</span>
               </div>
               <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
-                <span>Cleared &amp; ready for payout to 0729974065</span>
+                <span>Cleared &amp; eligible for payout to 0729974065</span>
               </div>
             </div>
 
@@ -268,7 +359,7 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
                 {stats?.pendingCustomerPayments?.toLocaleString() ?? 0}{" "}
                 <span className="text-xs font-bold text-slate-500">RWF</span>
               </div>
-              <div className="text-[10px] text-slate-500 mt-1">Awaiting customer PIN entry on mobile</div>
+              <div className="text-[10px] text-slate-500 mt-1">In flight / Awaiting customer PIN authorization</div>
             </div>
 
             <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
@@ -279,19 +370,19 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
                 {stats?.totalSweptToAirtel?.toLocaleString() ?? 0}{" "}
                 <span className="text-xs font-bold text-slate-500">RWF</span>
               </div>
-              <div className="text-[10px] text-slate-500 mt-1">Cumulative payouts to 0729974065</div>
+              <div className="text-[10px] text-slate-500 mt-1">Cumulative settled payouts to 0729974065</div>
             </div>
 
             <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
               <div className="text-[10px] font-bold text-purple-700 uppercase tracking-wider">
-                Total Payout Operator Fees
+                Total Payout Gateway Fees
               </div>
               <div className="text-2xl font-black text-slate-900 mt-2">
                 {stats?.totalPayoutFees?.toLocaleString() ?? 0}{" "}
                 <span className="text-xs font-bold text-slate-500">RWF</span>
               </div>
-              <div className="text-[10px] text-emerald-600 font-semibold mt-1">
-                ~90% fee savings via batching
+              <div className="text-[10px] text-slate-500 mt-1">
+                Captured dynamically from Paypack transactions
               </div>
             </div>
           </div>
@@ -307,8 +398,8 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
                   <h4 className="font-black text-slate-900 text-sm">Settlement Sweep Rules &amp; Schedule</h4>
                 </div>
                 <div className="flex items-center gap-1 text-xs">
-                  <span className="text-slate-400">Next Scheduled Sweep:</span>
-                  <strong className="text-slate-800">{stats?.nextScheduledSweep || "Daily at 23:59 CAT"}</strong>
+                  <span className="text-slate-400">Scheduled:</span>
+                  <strong className="text-slate-800">23:59 CAT (21:59 UTC on Vercel)</strong>
                 </div>
               </div>
 
@@ -336,7 +427,7 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
                   <span>
                     {(stats?.thresholdProgressPct ?? 0) >= 100
                       ? "✅ Sweep threshold reached! Scheduled payout eligible."
-                      : `Collecting funds. Sweep triggers automatically at ${thresholdInput.toLocaleString()} RWF.`}
+                      : `Collecting funds. Sweep eligible at ${thresholdInput.toLocaleString()} RWF.`}
                   </span>
                   {stats?.lastSweepAt && (
                     <span>Last sweep: {new Date(stats.lastSweepAt).toLocaleDateString()}</span>
@@ -363,36 +454,50 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
 
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">
-                    Daily Scheduled Sweep Time (CAT)
+                    Sweep Mode
+                  </label>
+                  <select
+                    value={sweepModeInput}
+                    onChange={(e) => setSweepModeInput(e.target.value as any)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 bg-white focus:outline-emerald-500"
+                  >
+                    <option value="FULL_BALANCE">Full Cleared Balance (Above Reserve)</option>
+                    <option value="EXACT_THRESHOLD">Exact Threshold Chunks (e.g. 50,000 RWF)</option>
+                  </select>
+                  <p className="text-[10px] text-slate-400 mt-1">Controls how much is swept when triggered</p>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Reserve Buffer (RWF)
                   </label>
                   <input
-                    type="text"
-                    value={scheduleTimeInput}
-                    onChange={(e) => setScheduleTimeInput(e.target.value)}
-                    placeholder="23:59"
+                    type="number"
+                    min={0}
+                    step={1000}
+                    value={reserveAmountInput}
+                    onChange={(e) => setReserveAmountInput(Number(e.target.value))}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 font-mono text-sm font-bold text-slate-800 focus:outline-emerald-500"
                   />
-                  <p className="text-[10px] text-slate-400 mt-1">Off-peak time for batch settlement</p>
+                  <p className="text-[10px] text-slate-400 mt-1">Minimum balance retained in Paypack account</p>
                 </div>
 
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">
-                    Primary Destination Airtel SIM
+                    Primary Destination (Locked)
                   </label>
-                  <input
-                    type="text"
-                    value={destinationPhoneInput}
-                    onChange={(e) => setDestinationPhoneInput(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 font-mono text-sm font-bold text-slate-800 bg-slate-50 focus:outline-emerald-500"
-                  />
-                  <p className="text-[10px] text-emerald-600 mt-1 font-semibold">Option A primary receiver</p>
+                  <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-100 font-mono text-sm font-bold text-slate-700 select-none">
+                    <Lock className="w-3.5 h-3.5 text-slate-500" />
+                    <span>0729974065 (Airtel)</span>
+                  </div>
+                  <p className="text-[10px] text-emerald-700 mt-1 font-semibold">Strictly locked to official receiving SIM</p>
                 </div>
 
-                <div>
+                <div className="sm:col-span-2">
                   <label className="font-bold text-slate-700 block mb-1">
-                    Automated Sweeps Status
+                    Automated Sweeps Status (Production Gate)
                   </label>
-                  <div className="flex items-center gap-3 pt-2">
+                  <div className="flex items-center gap-3 pt-1">
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input
                         type="checkbox"
@@ -402,7 +507,7 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
                       />
                       <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
                       <span className="ml-2.5 text-xs font-bold text-slate-700">
-                        {autoSweepInput ? "Active (Automated)" : "Paused (Manual Only)"}
+                        {autoSweepInput ? "Active (Automated Sweeps Enabled)" : "Paused (Manual SUPER_ADMIN Only)"}
                       </span>
                     </label>
                   </div>
@@ -431,29 +536,72 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
                   <span>SUPER_ADMIN Emergency Payout</span>
                 </div>
 
-                <p className="text-xs text-rose-800 leading-relaxed">
-                  Immediately sweep all cleared Paypack funds (
-                  <strong className="font-mono font-bold text-slate-900">
-                    {stats?.clearedMerchantBalance?.toLocaleString() ?? 0} RWF
-                  </strong>
-                  ) directly into primary Airtel Money SIM{" "}
-                  <strong className="font-mono font-bold text-slate-900">0729974065</strong>, bypassing the daily schedule.
-                </p>
+                {/* Pre-Authorization Payout Preview Breakdown */}
+                <div className="p-3.5 rounded-2xl bg-white/90 border border-rose-200 text-xs space-y-1.5">
+                  <div className="font-bold text-slate-800 text-[11px] uppercase tracking-wider">
+                    Payout Breakdown Preview
+                  </div>
+                  <div className="flex justify-between items-center text-slate-600 text-[11px]">
+                    <span>Cleared Balance:</span>
+                    <span className="font-mono font-bold text-slate-900">
+                      {preview?.clearedBalance?.toLocaleString() ?? stats?.clearedMerchantBalance?.toLocaleString() ?? 0} RWF
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-600 text-[11px]">
+                    <span>Reserve Buffer:</span>
+                    <span className="font-mono text-slate-700">
+                      {preview?.reserveAmount?.toLocaleString() ?? reserveAmountInput.toLocaleString()} RWF
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-900 text-[11px] font-bold border-t border-slate-100 pt-1">
+                    <span>Target Sweep:</span>
+                    <span className="font-mono text-rose-700">
+                      {preview?.sweepAmount?.toLocaleString() ?? 0} RWF
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-500 text-[10px]">
+                    <span>Estimated Fee:</span>
+                    <span className="font-mono italic">
+                      ~{preview?.estimatedFee?.toLocaleString() ?? 0} RWF (Pending Paypack confirmation)
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-emerald-800 text-xs font-black border-t border-slate-100 pt-1">
+                    <span>Expected Net:</span>
+                    <span className="font-mono">
+                      {preview?.expectedNetPayout?.toLocaleString() ?? 0} RWF
+                    </span>
+                  </div>
+                </div>
 
                 {showConfirmSweep ? (
-                  <div className="p-3.5 rounded-2xl bg-white border border-rose-300 space-y-2 text-xs">
-                    <p className="font-bold text-rose-900">
-                      Confirm immediate payout of {stats?.clearedMerchantBalance?.toLocaleString()} RWF to 0729974065?
+                  <div className="p-3.5 rounded-2xl bg-white border border-rose-300 space-y-2.5 text-xs">
+                    <div>
+                      <label className="font-bold text-rose-900 block mb-1">
+                        Mandatory Audit Justification (Purpose):
+                      </label>
+                      <input
+                        type="text"
+                        value={emergencyPurpose}
+                        onChange={(e) => setEmergencyPurpose(e.target.value)}
+                        placeholder="e.g. End-of-week tax reserve transfer"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-medium text-slate-800 focus:outline-rose-500"
+                      />
+                    </div>
+
+                    <p className="text-[11px] text-slate-600">
+                      Target destination is hard-locked to Airtel Money SIM:{" "}
+                      <strong className="font-mono text-slate-900">0729974065</strong>.
                     </p>
+
                     <div className="flex items-center gap-2 pt-1">
                       <button
                         type="button"
                         onClick={handleTriggerEmergencySweep}
-                        disabled={actionLoading}
-                        className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                        disabled={actionLoading || !emergencyPurpose || emergencyPurpose.trim().length < 5}
+                        className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                       >
                         {actionLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                        <span>Confirm &amp; Sweep Now</span>
+                        <span>Confirm &amp; Disburse</span>
                       </button>
                       <button
                         type="button"
@@ -472,28 +620,23 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
                     className="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50 shadow-xs"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>Trigger Emergency Sweep</span>
+                    <span>Authorize Emergency Payout</span>
                   </button>
                 )}
               </div>
 
-              {/* Financial Economics Insight Card */}
-              <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs text-xs space-y-2.5">
+              {/* Verified Tariff Mechanics */}
+              <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs text-xs space-y-2">
                 <div className="font-bold text-slate-800 flex items-center gap-1.5">
                   <TrendingUp className="w-4 h-4 text-emerald-600" />
-                  <span>Fee Optimization Economics</span>
+                  <span>Production Tariff Mechanics</span>
                 </div>
-                <div className="space-y-1.5 text-slate-600 text-[11px] leading-relaxed">
-                  <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                    <span>Per-Transaction Payout:</span>
-                    <span className="font-mono text-rose-600 font-bold">~150–250 RWF / 5,000 (3%–5%)</span>
-                  </div>
-                  <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                    <span>Batch 50,000 RWF Sweep:</span>
-                    <span className="font-mono text-emerald-600 font-bold">250 RWF / 50,000 (0.5%)</span>
-                  </div>
-                  <p className="text-[10px] text-slate-500 pt-1">
-                    Batch sweeps conserve ~90% of operator cashout fees while guaranteeing daily settlement to Airtel.
+                <div className="space-y-1 text-slate-600 text-[11px] leading-relaxed">
+                  <p>
+                    • <strong>Batching Efficiency:</strong> Fixed per-transaction B2C charges and telecom network roundtrips are reduced by consolidating daily payouts into a single batch at 50,000 RWF.
+                  </p>
+                  <p>
+                    • <strong>Dynamic Fees:</strong> Payout fees are captured directly from Paypack's API response and verified during webhook reconciliation.
                   </p>
                 </div>
               </div>
@@ -505,7 +648,7 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-slate-600" />
-                <h4 className="font-black text-slate-900 text-sm">Settlement Payout History &amp; Reconciliation</h4>
+                <h4 className="font-black text-slate-900 text-sm">Settlement Payout History &amp; Multi-State Ledger</h4>
               </div>
               <span className="text-xs text-slate-400 font-medium">{history.length} recorded sweep(s)</span>
             </div>
@@ -516,11 +659,11 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
                   <tr className="border-b border-slate-200 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50/80">
                     <th className="py-2.5 px-3">Sweep Ref</th>
                     <th className="py-2.5 px-3">Payout Ref</th>
-                    <th className="py-2.5 px-3">Amount</th>
-                    <th className="py-2.5 px-3">Fee</th>
+                    <th className="py-2.5 px-3">Gross Amount</th>
+                    <th className="py-2.5 px-3">Actual Fee</th>
                     <th className="py-2.5 px-3">Net to Airtel</th>
                     <th className="py-2.5 px-3">Type</th>
-                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3">Lifecycle Status</th>
                     <th className="py-2.5 px-3">Settled At</th>
                     <th className="py-2.5 px-3">Bridge Evidence</th>
                   </tr>
@@ -529,14 +672,20 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
                   {history.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="py-8 text-center text-slate-400 text-xs">
-                        No settlement sweeps recorded yet. Payouts trigger automatically at{" "}
-                        {thresholdInput.toLocaleString()} RWF or manually above.
+                        No settlement sweeps recorded yet. Payouts trigger automatically when scheduled and authorized.
                       </td>
                     </tr>
                   ) : (
                     history.map((record) => (
                       <tr key={record.id} className="hover:bg-slate-50/80 transition">
-                        <td className="py-3 px-3 font-mono font-bold text-slate-800">{record.sweepReference}</td>
+                        <td className="py-3 px-3 font-mono font-bold text-slate-800">
+                          {record.sweepReference}
+                          {record.purpose && (
+                            <div className="text-[10px] text-slate-400 font-sans font-normal truncate max-w-[140px]">
+                              {record.purpose}
+                            </div>
+                          )}
+                        </td>
                         <td className="py-3 px-3 font-mono text-slate-600 text-[11px]">
                           {record.payoutRef || "—"}
                         </td>
@@ -544,7 +693,7 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
                           {record.amount.toLocaleString()} RWF
                         </td>
                         <td className="py-3 px-3 font-mono text-slate-500 text-[11px]">
-                          {record.fee.toLocaleString()} RWF
+                          {record.isFeeEstimated ? `~${record.fee} RWF (Est)` : `${record.fee.toLocaleString()} RWF`}
                         </td>
                         <td className="py-3 px-3 font-mono font-bold text-emerald-700">
                           {record.netAmount.toLocaleString()} RWF
@@ -557,21 +706,11 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
                                 : "bg-blue-100 text-blue-800"
                             }`}
                           >
-                            {record.triggerType === "MANUAL_EMERGENCY" ? "Emergency" : "Threshold"}
+                            {record.triggerType === "MANUAL_EMERGENCY" ? "Emergency" : "Scheduled"}
                           </span>
                         </td>
                         <td className="py-3 px-3">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              record.status === "SUCCESSFUL" || record.status === "RECONCILED"
-                                ? "bg-emerald-100 text-emerald-800"
-                                : record.status === "FAILED"
-                                ? "bg-rose-100 text-rose-800"
-                                : "bg-amber-100 text-amber-800"
-                            }`}
-                          >
-                            {record.status}
-                          </span>
+                          {renderStatusBadge(record.status)}
                         </td>
                         <td className="py-3 px-3 text-slate-500 text-[11px]">
                           {record.settledAt
@@ -586,7 +725,7 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
                         <td className="py-3 px-3">
                           {record.smsBridgeEvidenceRef ? (
                             <span className="px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700 font-mono text-[10px] font-bold">
-                              SMS Verified
+                              SMS Reconciled
                             </span>
                           ) : (
                             <span className="text-slate-400 text-[11px]">—</span>
@@ -605,7 +744,7 @@ export function PaypackTreasuryModal({ isOpen, onClose }: PaypackTreasuryModalPr
         <div className="px-6 py-4 bg-white border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
           <div className="flex items-center gap-2">
             <Info className="w-4 h-4 text-slate-400" />
-            <span>Strict Financial Separation: Customer cash-ins are confirmed independently of payout sweeps.</span>
+            <span>Strict Financial Separation: Customer cash-ins are confirmed independently of cash-out payouts.</span>
           </div>
           <button
             onClick={onClose}

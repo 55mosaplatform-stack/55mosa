@@ -1,14 +1,31 @@
 import { prisma } from "../prisma";
-import { getPaypackConfig, initiatePaypackCashout, queryPaypackTransaction } from "./paypack-adapter";
+import {
+  getPaypackConfig,
+  initiatePaypackCashout,
+  queryPaypackTransaction,
+  generatePaypackIdempotencyKey,
+} from "./paypack-adapter";
+import crypto from "crypto";
+
+export type SweepStatus =
+  | "CASHOUT_PENDING"
+  | "CASHOUT_PROVIDER_CONFIRMED"
+  | "WALLET_RECEIPT_MATCHED"
+  | "RECONCILED"
+  | "CASHOUT_FAILED"
+  | "CASHOUT_REQUIRES_REVIEW";
 
 export interface SettlementConfig {
   threshold: number; // e.g. 50,000 RWF
-  destinationPhone: string; // e.g. "0729974065" (MOSA Airtel Money)
-  destinationName: string; // "MOSA Airtel Receiving Wallet"
-  autoSweepEnabled: boolean;
-  scheduleTime: string; // "23:59" CAT
+  destinationPhone: string; // Hard-locked to "0729974065" (MOSA Airtel Money)
+  destinationName: string; // "MOSA Airtel Receiving Wallet (Primary)"
+  autoSweepEnabled: boolean; // Production safety: default false until production authorization
+  scheduleTime: string; // "23:59" CAT (21:59 UTC on Vercel)
   maxDailySweeps: number; // 1
   minSweepAmount: number; // 5,000 RWF
+  sweepMode: "FULL_BALANCE" | "EXACT_THRESHOLD"; // Default "FULL_BALANCE"
+  reserveAmount: number; // Minimum balance retained in Paypack account (default: 0 RWF)
+  lastDailySweepDate?: string | null; // e.g. "2026-11-01" to prevent duplicate daily sweeps
   updatedAt?: string;
   updatedBy?: string;
 }
@@ -16,20 +33,23 @@ export interface SettlementConfig {
 export interface SettlementSweepRecord {
   id: string;
   sweepReference: string;
+  idempotencyKey: string;
   payoutRef: string | null;
   amount: number;
   fee: number;
   netAmount: number;
   destinationPhone: string;
   destinationProvider: string;
-  status: "PENDING" | "PROCESSING" | "SUCCESSFUL" | "FAILED" | "RECONCILED";
+  status: SweepStatus;
   triggerType: "AUTOMATIC_THRESHOLD" | "AUTOMATIC_SCHEDULED" | "MANUAL_EMERGENCY";
   triggeredById?: string | null;
   triggeredByName?: string | null;
+  purpose?: string | null;
   clearedBalanceBefore: number;
   clearedBalanceAfter: number;
   failureReason?: string | null;
   smsBridgeEvidenceRef?: string | null;
+  isFeeEstimated?: boolean;
   createdAt: string;
   settledAt?: string | null;
   reconciledAt?: string | null;
@@ -50,18 +70,79 @@ export interface TreasuryStats {
   config: SettlementConfig;
 }
 
+export interface SweepPreview {
+  clearedBalance: number;
+  reserveAmount: number;
+  sweepMode: "FULL_BALANCE" | "EXACT_THRESHOLD";
+  sweepAmount: number;
+  estimatedFee: number;
+  isFeeEstimated: boolean;
+  expectedNetPayout: number;
+  destinationPhone: string;
+  destinationName: string;
+  isEligible: boolean;
+  ineligibilityReason?: string;
+}
+
 const DEFAULT_SETTLEMENT_CONFIG: SettlementConfig = {
   threshold: 50000,
-  destinationPhone: "0729974065",
+  destinationPhone: "0729974065", // Primary MOSA Airtel Receiving Destination
   destinationName: "MOSA Airtel Receiving Wallet (Primary)",
-  autoSweepEnabled: true,
-  scheduleTime: "23:59",
+  autoSweepEnabled: false, // Production safety: explicitly requires admin enablement
+  scheduleTime: "23:59", // 23:59 CAT (= 21:59 UTC on Vercel)
   maxDailySweeps: 1,
   minSweepAmount: 5000,
+  sweepMode: "FULL_BALANCE",
+  reserveAmount: 0,
 };
 
 /**
- * Retrieves the current settlement configuration from PaymentProviderConfig or defaults.
+ * Acquires a distributed lock for settlement operations using PostgreSQL.
+ * Guarantees that scheduled crons and manual emergency clicks cannot execute concurrently.
+ */
+export async function acquireSettlementLock(lockKey = "lock:paypack_settlement", ttlSeconds = 120): Promise<boolean> {
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + ttlSeconds * 1000);
+
+  try {
+    // Delete expired lock if past resetAt
+    await prisma.paymentRateLimit.deleteMany({
+      where: {
+        key: lockKey,
+        resetAt: { lt: now },
+      },
+    });
+
+    // Atomically insert lock record; succeeds only if key does not exist
+    await prisma.paymentRateLimit.create({
+      data: {
+        key: lockKey,
+        count: 1,
+        resetAt: expiresAt,
+      },
+    });
+    return true;
+  } catch (err: any) {
+    if (err.code === "P2002") {
+      return false; // Concurrency lock already held
+    }
+    console.warn("[SETTLEMENT_LOCK_WARN] Distributed lock acquisition error:", err.message);
+    return false;
+  }
+}
+
+/**
+ * Releases the distributed lock.
+ */
+export async function releaseSettlementLock(lockKey = "lock:paypack_settlement"): Promise<void> {
+  await prisma.paymentRateLimit.deleteMany({
+    where: { key: lockKey },
+  }).catch(() => null);
+}
+
+/**
+ * Retrieves the current settlement configuration.
+ * Destination phone is locked to MOSA's official Airtel SIM 0729974065.
  */
 export async function getSettlementConfig(): Promise<SettlementConfig> {
   try {
@@ -76,12 +157,15 @@ export async function getSettlementConfig(): Promise<SettlementConfig> {
     const parsed = JSON.parse(configRow.instructions);
     return {
       threshold: Number(parsed.threshold || DEFAULT_SETTLEMENT_CONFIG.threshold),
-      destinationPhone: configRow.accountNumber || DEFAULT_SETTLEMENT_CONFIG.destinationPhone,
+      destinationPhone: "0729974065", // Immutable: locked to official Airtel receiver
       destinationName: configRow.accountName || DEFAULT_SETTLEMENT_CONFIG.destinationName,
       autoSweepEnabled: configRow.isEnabled,
       scheduleTime: parsed.scheduleTime || DEFAULT_SETTLEMENT_CONFIG.scheduleTime,
       maxDailySweeps: Number(parsed.maxDailySweeps || DEFAULT_SETTLEMENT_CONFIG.maxDailySweeps),
       minSweepAmount: Number(parsed.minSweepAmount || DEFAULT_SETTLEMENT_CONFIG.minSweepAmount),
+      sweepMode: parsed.sweepMode === "EXACT_THRESHOLD" ? "EXACT_THRESHOLD" : "FULL_BALANCE",
+      reserveAmount: Number(parsed.reserveAmount || 0),
+      lastDailySweepDate: parsed.lastDailySweepDate || null,
       updatedAt: configRow.updatedAt?.toISOString(),
       updatedBy: configRow.updatedBy || undefined,
     };
@@ -93,6 +177,7 @@ export async function getSettlementConfig(): Promise<SettlementConfig> {
 
 /**
  * Saves or updates settlement configuration.
+ * Destination phone is strictly locked to MOSA Airtel 0729974065.
  */
 export async function updateSettlementConfig(
   params: Partial<SettlementConfig>,
@@ -102,6 +187,7 @@ export async function updateSettlementConfig(
   const updated: SettlementConfig = {
     ...current,
     ...params,
+    destinationPhone: "0729974065", // Enforce immutable destination
     updatedAt: new Date().toISOString(),
     updatedBy: adminUser ? `${adminUser.name} (${adminUser.id})` : undefined,
   };
@@ -111,6 +197,9 @@ export async function updateSettlementConfig(
     scheduleTime: updated.scheduleTime,
     maxDailySweeps: updated.maxDailySweeps,
     minSweepAmount: updated.minSweepAmount,
+    sweepMode: updated.sweepMode,
+    reserveAmount: updated.reserveAmount,
+    lastDailySweepDate: updated.lastDailySweepDate || current.lastDailySweepDate,
   });
 
   await prisma.paymentProviderConfig.upsert({
@@ -119,14 +208,14 @@ export async function updateSettlementConfig(
       provider: "PAYPACK_SETTLEMENT",
       name: "Paypack Automated Airtel Settlement Sweeps",
       isEnabled: updated.autoSweepEnabled,
-      accountNumber: updated.destinationPhone,
+      accountNumber: "0729974065",
       accountName: updated.destinationName,
       instructions: instructionsPayload,
       updatedBy: adminUser?.id,
     },
     update: {
       isEnabled: updated.autoSweepEnabled,
-      accountNumber: updated.destinationPhone,
+      accountNumber: "0729974065",
       accountName: updated.destinationName,
       instructions: instructionsPayload,
       updatedBy: adminUser?.id,
@@ -149,7 +238,7 @@ export async function updateSettlementConfig(
 }
 
 /**
- * Calculates treasury metrics, merchant balance, pending funds, and threshold progress.
+ * Calculates real-time treasury metrics, merchant balance, pending funds, and progress.
  */
 export async function getTreasuryStats(): Promise<TreasuryStats> {
   const config = await getSettlementConfig();
@@ -168,11 +257,11 @@ export async function getTreasuryStats(): Promise<TreasuryStats> {
     _count: { _all: true },
   });
 
-  // 3. Completed sweeps to Airtel
+  // 3. Completed or confirmed sweeps to Airtel
   const sweepLogs = await prisma.auditLog.findMany({
     where: {
       entityType: "SETTLEMENT_SWEEP",
-      action: { in: ["SWEEP_SUCCESSFUL", "SWEEP_RECONCILED"] },
+      action: { in: ["SWEEP_PROVIDER_CONFIRMED", "SWEEP_RECONCILED", "SWEEP_SUCCESSFUL"] },
     },
     orderBy: { createdAt: "desc" },
     take: 100,
@@ -195,12 +284,11 @@ export async function getTreasuryStats(): Promise<TreasuryStats> {
         }
       }
     } catch {
-      // Ignore parse failure on individual log
+      // Continue
     }
   }
 
   const totalCollectedRevenue = confirmedAgg._sum.feeAmount || 0;
-  // Cleared balance = confirmed revenue minus already swept amounts
   const clearedMerchantBalance = Math.max(0, totalCollectedRevenue - totalSweptToAirtel);
 
   const thresholdProgressPct = config.threshold > 0
@@ -217,7 +305,7 @@ export async function getTreasuryStats(): Promise<TreasuryStats> {
     totalPayoutFees,
     lastSweepAt,
     lastSweepRef,
-    nextScheduledSweep: `Today at ${config.scheduleTime} CAT`,
+    nextScheduledSweep: `Today at ${config.scheduleTime} CAT (21:59 UTC on Vercel)`,
     isThresholdReached,
     thresholdProgressPct,
     config,
@@ -225,17 +313,83 @@ export async function getTreasuryStats(): Promise<TreasuryStats> {
 }
 
 /**
- * Returns historical list of settlement sweeps.
+ * Calculates a transparent preview of the sweep amount, reserve, estimated fees,
+ * and expected net payout to Airtel 0729974065 before manual or scheduled authorization.
+ */
+export async function calculateSweepPreview({
+  requestedAmount,
+  forceManual = false,
+}: {
+  requestedAmount?: number;
+  forceManual?: boolean;
+} = {}): Promise<SweepPreview> {
+  const config = await getSettlementConfig();
+  const stats = await getTreasuryStats();
+
+  const clearedBalance = stats.clearedMerchantBalance;
+  const reserveAmount = Math.max(0, config.reserveAmount);
+  const availableAboveReserve = Math.max(0, clearedBalance - reserveAmount);
+
+  let sweepAmount = 0;
+
+  if (forceManual && requestedAmount) {
+    sweepAmount = requestedAmount;
+  } else if (config.sweepMode === "EXACT_THRESHOLD") {
+    // Withdraw in exact threshold chunks (e.g. 50,000 RWF)
+    sweepAmount = availableAboveReserve >= config.threshold
+      ? Math.floor(availableAboveReserve / config.threshold) * config.threshold
+      : 0;
+  } else {
+    // Default "FULL_BALANCE": withdraw all cleared funds above the reserve
+    sweepAmount = availableAboveReserve;
+  }
+
+  // Estimated fee is flagged as estimate until Paypack returns actual fee in cashout response
+  const estimatedFee = sweepAmount > 0 ? Math.round(sweepAmount * 0.005) : 0;
+  const expectedNetPayout = Math.max(0, sweepAmount - estimatedFee);
+
+  let isEligible = true;
+  let ineligibilityReason: string | undefined;
+
+  if (!forceManual) {
+    if (!config.autoSweepEnabled) {
+      isEligible = false;
+      ineligibilityReason = "Automated settlement sweeps are currently paused in Command Center.";
+    } else if (sweepAmount < config.minSweepAmount) {
+      isEligible = false;
+      ineligibilityReason = `Sweep amount (${sweepAmount.toLocaleString()} RWF) is below minimum payout (${config.minSweepAmount.toLocaleString()} RWF).`;
+    } else if (availableAboveReserve < config.threshold) {
+      isEligible = false;
+      ineligibilityReason = `Cleared balance (${clearedBalance.toLocaleString()} RWF) has not reached the threshold (${config.threshold.toLocaleString()} RWF).`;
+    }
+  }
+
+  return {
+    clearedBalance,
+    reserveAmount,
+    sweepMode: config.sweepMode,
+    sweepAmount,
+    estimatedFee,
+    isFeeEstimated: true,
+    expectedNetPayout,
+    destinationPhone: "0729974065",
+    destinationName: config.destinationName,
+    isEligible,
+    ineligibilityReason,
+  };
+}
+
+/**
+ * Returns historical list of settlement sweeps from PostgreSQL audit ledger.
  */
 export async function getSettlementHistory(limit = 50): Promise<SettlementSweepRecord[]> {
   const sweepLogs = await prisma.auditLog.findMany({
     where: { entityType: "SETTLEMENT_SWEEP" },
     orderBy: { createdAt: "desc" },
-    take: limit,
+    take: limit * 2, // Fetch extra to account for state transitions of same sweep
   });
 
-  const records: SettlementSweepRecord[] = [];
-  const seenRefs = new Set<string>();
+  const recordsMap = new Map<string, SettlementSweepRecord>();
 
   for (const log of sweepLogs) {
     try {
@@ -243,51 +397,80 @@ export async function getSettlementHistory(limit = 50): Promise<SettlementSweepR
       const meta = JSON.parse(log.metadata);
       const sweepRef = meta.sweepReference || log.entityId;
 
-      if (seenRefs.has(sweepRef)) continue;
-      seenRefs.add(sweepRef);
+      if (recordsMap.has(sweepRef)) {
+        // Keep the latest state record
+        continue;
+      }
 
-      records.push({
+      const status: SweepStatus =
+        meta.status ||
+        (log.action === "SWEEP_RECONCILED"
+          ? "RECONCILED"
+          : log.action === "SWEEP_PROVIDER_CONFIRMED"
+          ? "CASHOUT_PROVIDER_CONFIRMED"
+          : log.action === "SWEEP_FAILED"
+          ? "CASHOUT_FAILED"
+          : log.action === "SWEEP_REQUIRES_REVIEW"
+          ? "CASHOUT_REQUIRES_REVIEW"
+          : "CASHOUT_PENDING");
+
+      recordsMap.set(sweepRef, {
         id: log.id,
         sweepReference: sweepRef,
+        idempotencyKey: meta.idempotencyKey || generatePaypackIdempotencyKey("SWP-", sweepRef),
         payoutRef: meta.payoutRef || null,
         amount: Number(meta.amount || 0),
         fee: Number(meta.fee || 0),
         netAmount: Number(meta.netAmount || meta.amount || 0),
-        destinationPhone: meta.destinationPhone || "0729974065",
-        destinationProvider: meta.destinationProvider || "AIRTEL_MONEY",
-        status: meta.status || (log.action === "SWEEP_SUCCESSFUL" ? "SUCCESSFUL" : "PROCESSING"),
+        destinationPhone: "0729974065",
+        destinationProvider: "AIRTEL_MONEY",
+        status,
         triggerType: meta.triggerType || "AUTOMATIC_THRESHOLD",
         triggeredById: log.actorId,
         triggeredByName: meta.triggeredByName || (log.actorId ? "Super Admin" : "System Automated Sweep"),
+        purpose: meta.purpose || null,
         clearedBalanceBefore: Number(meta.clearedBalanceBefore || 0),
         clearedBalanceAfter: Number(meta.clearedBalanceAfter || 0),
         failureReason: meta.failureReason || null,
         smsBridgeEvidenceRef: meta.smsBridgeEvidenceRef || null,
+        isFeeEstimated: Boolean(meta.isFeeEstimated),
         createdAt: log.createdAt.toISOString(),
-        settledAt: meta.settledAt || log.createdAt.toISOString(),
+        settledAt: meta.settledAt || null,
         reconciledAt: meta.reconciledAt || null,
         isSimulation: Boolean(meta.isSimulation),
       });
+
+      if (recordsMap.size >= limit) break;
     } catch {
       // Continue
     }
   }
 
-  return records;
+  return Array.from(recordsMap.values());
 }
 
 /**
  * Executes a controlled settlement sweep to the primary MOSA Airtel wallet 0729974065.
- * Strictly respects idempotency, cleared balances, and financial separation.
+ *
+ * Strict Production Safety Rules:
+ * 1. Distributed Locking: Only 1 sweep operation can execute at any time.
+ * 2. Strict Idempotency: Persistent 32-character maximum Idempotency-Key.
+ * 3. Asynchronous PENDING state: Payout is initially marked CASHOUT_PENDING, not confirmed.
+ * 4. Network Timeout Recovery: Look up existing transaction ref; never mint a duplicate payout.
+ * 5. Destination Locked: Destination is strictly 0729974065.
  */
 export async function executeSettlementSweep({
   amountToSweep,
   forceManual = false,
+  triggerType = "AUTOMATIC_THRESHOLD",
+  purpose = "Automated Threshold Batch Sweep",
   adminUser,
   ipAddress,
 }: {
   amountToSweep?: number;
   forceManual?: boolean;
+  triggerType?: "AUTOMATIC_THRESHOLD" | "AUTOMATIC_SCHEDULED" | "MANUAL_EMERGENCY";
+  purpose?: string;
   adminUser?: { id: string; name: string };
   ipAddress?: string;
 }): Promise<{
@@ -296,114 +479,162 @@ export async function executeSettlementSweep({
   sweepRecord?: SettlementSweepRecord;
   skippedReason?: string;
 }> {
-  const config = await getSettlementConfig();
-  const stats = await getTreasuryStats();
-
-  // 1. Safeguard: Check if auto-sweep is enabled
-  if (!forceManual && !config.autoSweepEnabled) {
+  // 1. Acquire Distributed Lock (2-minute TTL)
+  const lockAcquired = await acquireSettlementLock("lock:paypack_settlement", 120);
+  if (!lockAcquired) {
     return {
       success: false,
-      message: "Automatic settlement sweeps are currently paused in Command Center.",
-      skippedReason: "AUTO_SWEEP_DISABLED",
+      message: "Another settlement sweep or payout is currently in progress. Please wait.",
+      skippedReason: "CONCURRENT_SWEEP_IN_PROGRESS",
     };
   }
 
-  // 2. Safeguard: Check daily sweep limit for automated runs
-  if (!forceManual) {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+  try {
+    const config = await getSettlementConfig();
+    const stats = await getTreasuryStats();
 
-    const sweepsToday = await prisma.auditLog.count({
-      where: {
+    // 2. Safeguard: Check if auto-sweep is enabled
+    if (!forceManual && !config.autoSweepEnabled) {
+      return {
+        success: false,
+        message: "Automatic settlement sweeps are currently paused in Command Center.",
+        skippedReason: "AUTO_SWEEP_DISABLED",
+      };
+    }
+
+    // 3. Safeguard: Check daily sweep limit & unique daily execution for automated runs
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (!forceManual) {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
+      const sweepsToday = await prisma.auditLog.count({
+        where: {
+          entityType: "SETTLEMENT_SWEEP",
+          action: { in: ["SWEEP_PROVIDER_CONFIRMED", "SWEEP_RECONCILED", "SWEEP_SUCCESSFUL", "SWEEP_PENDING"] },
+          createdAt: { gte: todayStart },
+        },
+      });
+
+      if (sweepsToday >= config.maxDailySweeps || config.lastDailySweepDate === todayStr) {
+        return {
+          success: false,
+          message: `Maximum automatic sweep frequency reached (${sweepsToday}/${config.maxDailySweeps} today). Emergency payout can be triggered manually by SUPER_ADMIN.`,
+          skippedReason: "MAX_DAILY_FREQUENCY_REACHED",
+        };
+      }
+    }
+
+    // 4. Calculate sweep amount based on sweepMode and reserve
+    const preview = await calculateSweepPreview({ requestedAmount: amountToSweep, forceManual });
+
+    if (!forceManual && !preview.isEligible) {
+      return {
+        success: false,
+        message: preview.ineligibilityReason || "Cleared balance is not eligible for sweep.",
+        skippedReason: preview.ineligibilityReason?.includes("threshold")
+          ? "THRESHOLD_NOT_REACHED"
+          : "BELOW_MINIMUM_SWEEP_AMOUNT",
+      };
+    }
+
+    const targetAmount = preview.sweepAmount;
+    if (targetAmount <= 0) {
+      return {
+        success: false,
+        message: "No cleared funds available to sweep above the reserve buffer.",
+        skippedReason: "ZERO_CLEARED_BALANCE",
+      };
+    }
+
+    // 5. Generate persistent, unique sweep reference & 32-character Idempotency Key
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
+    const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, "");
+    const randSuffix = Math.floor(Math.random() * 9000 + 1000);
+    const sweepReference = `SWEEP-${dateStr}-${timeStr}-${randSuffix}`;
+    const idempotencyKey = generatePaypackIdempotencyKey("SWP-", sweepReference);
+    const destinationPhone = "0729974065"; // Hard-locked to official Airtel receiver
+
+    // 6. Record Initial Audit Entry: CASHOUT_PENDING
+    const pendingAudit = await prisma.auditLog.create({
+      data: {
+        actorId: adminUser?.id,
+        action: "SWEEP_PENDING",
         entityType: "SETTLEMENT_SWEEP",
-        action: { in: ["SWEEP_SUCCESSFUL", "SWEEP_RECONCILED", "SWEEP_PROCESSING"] },
-        createdAt: { gte: todayStart },
+        entityId: sweepReference,
+        metadata: JSON.stringify({
+          sweepReference,
+          idempotencyKey,
+          amount: targetAmount,
+          fee: 0,
+          isFeeEstimated: true,
+          netAmount: targetAmount,
+          destinationPhone,
+          destinationProvider: "AIRTEL_MONEY",
+          triggerType,
+          purpose,
+          triggeredByName: adminUser?.name || "System Automated Sweep",
+          clearedBalanceBefore: stats.clearedMerchantBalance,
+          status: "CASHOUT_PENDING" as SweepStatus,
+          createdAt: now.toISOString(),
+        }),
+        ipAddress,
       },
     });
 
-    if (sweepsToday >= config.maxDailySweeps) {
-      return {
-        success: false,
-        message: `Maximum automatic sweep frequency reached (${sweepsToday}/${config.maxDailySweeps} today). Emergency payout can be triggered manually by SUPER_ADMIN.`,
-        skippedReason: "MAX_DAILY_FREQUENCY_REACHED",
-      };
-    }
-  }
-
-  // 3. Determine amount to sweep: must only sweep cleared funds
-  const clearedBalance = stats.clearedMerchantBalance;
-  const targetAmount = forceManual && amountToSweep
-    ? amountToSweep
-    : (amountToSweep ? Math.min(amountToSweep, clearedBalance) : clearedBalance);
-
-  if (targetAmount < config.minSweepAmount && !forceManual) {
-    return {
-      success: false,
-      message: `Cleared balance (${targetAmount.toLocaleString()} RWF) is below minimum payout amount (${config.minSweepAmount.toLocaleString()} RWF).`,
-      skippedReason: "BELOW_MINIMUM_SWEEP_AMOUNT",
-    };
-  }
-
-  if (targetAmount < config.threshold && !forceManual) {
-    return {
-      success: false,
-      message: `Cleared balance (${targetAmount.toLocaleString()} RWF) has not reached the threshold (${config.threshold.toLocaleString()} RWF).`,
-      skippedReason: "THRESHOLD_NOT_REACHED",
-    };
-  }
-
-  if (targetAmount <= 0) {
-    return {
-      success: false,
-      message: "No cleared funds available to sweep at this time.",
-      skippedReason: "ZERO_CLEARED_BALANCE",
-    };
-  }
-
-  // 4. Generate deterministic, unique sweep reference
-  const now = new Date();
-  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
-  const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, "");
-  const sweepReference = `SWEEP-${dateStr}-${timeStr}-${Math.floor(Math.random() * 900 + 100)}`;
-  const destinationPhone = config.destinationPhone || "0729974065";
-  const triggerType = forceManual ? "MANUAL_EMERGENCY" : "AUTOMATIC_THRESHOLD";
-
-  // 5. Initial audit entry (PROCESSING)
-  const processingAudit = await prisma.auditLog.create({
-    data: {
-      actorId: adminUser?.id,
-      action: "SWEEP_PROCESSING",
-      entityType: "SETTLEMENT_SWEEP",
-      entityId: sweepReference,
-      metadata: JSON.stringify({
-        sweepReference,
+    // 7. Execute CASHOUT payout via Paypack Adapter
+    let cashoutResult;
+    try {
+      cashoutResult = await initiatePaypackCashout({
         amount: targetAmount,
         destinationPhone,
-        destinationProvider: "AIRTEL_MONEY",
-        triggerType,
-        triggeredByName: adminUser?.name || "System Automated Sweep",
-        clearedBalanceBefore: clearedBalance,
-        status: "PROCESSING",
-        createdAt: now.toISOString(),
-      }),
-      ipAddress,
-    },
-  });
+        sweepReference,
+      });
+    } catch (networkError: any) {
+      // Network timeout or network failure: DO NOT mint a new payout ref!
+      console.error("[SETTLEMENT_SWEEP_NETWORK_TIMEOUT]", networkError);
 
-  try {
-    // 6. Execute CASHOUT payout via Paypack Adapter
-    const cashoutResult = await initiatePaypackCashout({
-      amount: targetAmount,
-      destinationPhone,
-    });
+      await prisma.auditLog.create({
+        data: {
+          actorId: adminUser?.id,
+          action: "SWEEP_REQUIRES_REVIEW",
+          entityType: "SETTLEMENT_SWEEP",
+          entityId: sweepReference,
+          metadata: JSON.stringify({
+            sweepReference,
+            idempotencyKey,
+            amount: targetAmount,
+            destinationPhone,
+            triggerType,
+            status: "CASHOUT_REQUIRES_REVIEW" as SweepStatus,
+            failureReason: `Network timeout during payout dispatch: ${networkError.message}. Verification required.`,
+            needsLookup: true,
+            createdAt: now.toISOString(),
+          }),
+          ipAddress,
+        },
+      });
 
-    const fee = cashoutResult.fee ?? (targetAmount >= 50000 ? 250 : 150); // Operator B2C disbursement fee
-    const netAmount = Math.max(0, targetAmount - fee);
-    const clearedBalanceAfter = Math.max(0, clearedBalance - targetAmount);
+      // Attempt immediate lookup using original idempotency key
+      const lookup = await queryPaypackTransaction(idempotencyKey).catch(() => null);
+      if (lookup && lookup.found) {
+        return {
+          success: true,
+          message: `Payout was already submitted before network timeout (Ref: ${lookup.ref || idempotencyKey}). Status: ${lookup.status}.`,
+        };
+      }
 
+      return {
+        success: false,
+        message: `Network timeout connecting to Paypack. Transaction status is uncertain and logged as CASHOUT_REQUIRES_REVIEW for manual review. Original reference: ${sweepReference}`,
+        skippedReason: "NETWORK_TIMEOUT_VERIFICATION_PENDING",
+      };
+    }
+
+    // 8. Handle Gateway Explicit Failure
     if (!cashoutResult.success) {
-      // Payout failed at gateway
-      const failureAudit = await prisma.auditLog.create({
+      await prisma.auditLog.create({
         data: {
           actorId: adminUser?.id,
           action: "SWEEP_FAILED",
@@ -411,17 +642,16 @@ export async function executeSettlementSweep({
           entityId: sweepReference,
           metadata: JSON.stringify({
             sweepReference,
+            idempotencyKey,
             payoutRef: cashoutResult.ref || null,
             amount: targetAmount,
             fee: 0,
-            netAmount: 0,
             destinationPhone,
-            destinationProvider: "AIRTEL_MONEY",
             triggerType,
-            status: "FAILED",
+            status: "CASHOUT_FAILED" as SweepStatus,
             failureReason: cashoutResult.message,
-            clearedBalanceBefore: clearedBalance,
-            clearedBalanceAfter: clearedBalance,
+            clearedBalanceBefore: stats.clearedMerchantBalance,
+            clearedBalanceAfter: stats.clearedMerchantBalance,
             createdAt: now.toISOString(),
           }),
           ipAddress,
@@ -430,32 +660,48 @@ export async function executeSettlementSweep({
 
       return {
         success: false,
-        message: `Settlement sweep failed: ${cashoutResult.message}`,
+        message: `Settlement payout rejected by Paypack: ${cashoutResult.message}`,
         skippedReason: "GATEWAY_CASHOUT_FAILED",
       };
     }
 
-    // 7. Record successful sweep
-    const successAudit = await prisma.auditLog.create({
+    // 9. Process Initial Cashout Response
+    // If Paypack returns actual fee in response, use it; otherwise flag fee as pending confirmation
+    const isFeeConfirmed = cashoutResult.fee !== undefined;
+    const fee = cashoutResult.fee ?? 0;
+    const netAmount = Math.max(0, targetAmount - fee);
+    const clearedBalanceAfter = Math.max(0, stats.clearedMerchantBalance - targetAmount);
+
+    // Initial state is CASHOUT_PENDING unless provider returned immediate confirmed status
+    const initialStatus: SweepStatus =
+      cashoutResult.status === "successful" ? "CASHOUT_PROVIDER_CONFIRMED" : "CASHOUT_PENDING";
+
+    const sweepAction =
+      initialStatus === "CASHOUT_PROVIDER_CONFIRMED" ? "SWEEP_PROVIDER_CONFIRMED" : "SWEEP_PENDING";
+
+    const sweepLog = await prisma.auditLog.create({
       data: {
         actorId: adminUser?.id,
-        action: "SWEEP_SUCCESSFUL",
+        action: sweepAction,
         entityType: "SETTLEMENT_SWEEP",
         entityId: sweepReference,
         metadata: JSON.stringify({
           sweepReference,
+          idempotencyKey,
           payoutRef: cashoutResult.ref,
           amount: targetAmount,
           fee,
+          isFeeEstimated: !isFeeConfirmed,
           netAmount,
           destinationPhone,
           destinationProvider: "AIRTEL_MONEY",
           triggerType,
-          status: "SUCCESSFUL",
+          purpose,
+          status: initialStatus,
           isSimulation: cashoutResult.isSimulation,
-          clearedBalanceBefore: clearedBalance,
+          clearedBalanceBefore: stats.clearedMerchantBalance,
           clearedBalanceAfter,
-          settledAt: new Date().toISOString(),
+          settledAt: initialStatus === "CASHOUT_PROVIDER_CONFIRMED" ? new Date().toISOString() : null,
           createdAt: now.toISOString(),
           triggeredByName: adminUser?.name || "System Automated Sweep",
         }),
@@ -463,67 +709,136 @@ export async function executeSettlementSweep({
       },
     });
 
+    // Update config with lastDailySweepDate for automated runs
+    if (!forceManual) {
+      await updateSettlementConfig({ lastDailySweepDate: todayStr });
+    }
+
     const sweepRecord: SettlementSweepRecord = {
-      id: successAudit.id,
+      id: sweepLog.id,
       sweepReference,
+      idempotencyKey,
       payoutRef: cashoutResult.ref,
       amount: targetAmount,
       fee,
       netAmount,
       destinationPhone,
       destinationProvider: "AIRTEL_MONEY",
-      status: "SUCCESSFUL",
+      status: initialStatus,
       triggerType,
+      purpose,
       triggeredById: adminUser?.id || null,
       triggeredByName: adminUser?.name || "System Automated Sweep",
-      clearedBalanceBefore: clearedBalance,
+      clearedBalanceBefore: stats.clearedMerchantBalance,
       clearedBalanceAfter,
+      isFeeEstimated: !isFeeConfirmed,
       isSimulation: cashoutResult.isSimulation,
       createdAt: now.toISOString(),
-      settledAt: new Date().toISOString(),
+      settledAt: initialStatus === "CASHOUT_PROVIDER_CONFIRMED" ? new Date().toISOString() : null,
     };
 
     return {
       success: true,
-      message: `Successfully executed ${targetAmount.toLocaleString()} RWF sweep to Airtel SIM ${destinationPhone}. Ref: ${cashoutResult.ref}`,
+      message:
+        initialStatus === "CASHOUT_PROVIDER_CONFIRMED"
+          ? `Successfully disbursed ${targetAmount.toLocaleString()} RWF to Airtel SIM ${destinationPhone}. Ref: ${cashoutResult.ref}`
+          : `Settlement payout of ${targetAmount.toLocaleString()} RWF submitted to Paypack (Status: PENDING). Ref: ${cashoutResult.ref}`,
       sweepRecord,
     };
   } catch (error: any) {
     console.error("[SETTLEMENT_SWEEP_EXCEPTION]", error);
-    await prisma.auditLog.create({
-      data: {
-        actorId: adminUser?.id,
-        action: "SWEEP_FAILED",
-        entityType: "SETTLEMENT_SWEEP",
-        entityId: sweepReference,
-        metadata: JSON.stringify({
-          sweepReference,
-          amount: targetAmount,
-          destinationPhone,
-          triggerType,
-          status: "FAILED",
-          failureReason: error.message || "Unexpected exception during payout execution",
-          clearedBalanceBefore: clearedBalance,
-          clearedBalanceAfter: clearedBalance,
-          createdAt: now.toISOString(),
-        }),
-        ipAddress,
-      },
-    }).catch(() => null);
-
     return {
       success: false,
       message: `Exception during settlement sweep: ${error.message}`,
       skippedReason: "UNEXPECTED_EXCEPTION",
     };
+  } finally {
+    // Release distributed lock
+    await releaseSettlementLock("lock:paypack_settlement");
   }
+}
+
+/**
+ * Handles incoming Paypack Webhook events for CASHOUT disbursements.
+ * Confirms payout status, records exact gateway fee, and transitions status
+ * from CASHOUT_PENDING to CASHOUT_PROVIDER_CONFIRMED or CASHOUT_FAILED.
+ */
+export async function confirmSweepFromProviderWebhook({
+  payoutRef,
+  status,
+  amount,
+  fee,
+  destinationPhone,
+  processedAt,
+}: {
+  payoutRef: string;
+  status: "successful" | "failed" | string;
+  amount: number;
+  fee?: number;
+  destinationPhone: string;
+  processedAt?: string;
+}): Promise<{ matched: boolean; status?: SweepStatus; sweepReference?: string }> {
+  // Find matching pending sweep in AuditLog
+  const matchingLog = await prisma.auditLog.findFirst({
+    where: {
+      entityType: "SETTLEMENT_SWEEP",
+      OR: [
+        { metadata: { contains: payoutRef } },
+        { entityId: payoutRef },
+      ],
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!matchingLog || !matchingLog.metadata) {
+    return { matched: false };
+  }
+
+  const meta = JSON.parse(matchingLog.metadata);
+  const cleanPhone = destinationPhone.replace(/[\s\-\+\(\)]/g, "").replace(/^250/, "0");
+
+  // Strict verification: Destination must match official Airtel receiver
+  if (cleanPhone !== "0729974065" && meta.destinationPhone !== "0729974065") {
+    console.warn(`[PAYPACK_WEBHOOK_MISMATCH] Destination ${cleanPhone} does not match expected 0729974065`);
+    return { matched: false };
+  }
+
+  const newStatus: SweepStatus = status === "successful" ? "CASHOUT_PROVIDER_CONFIRMED" : "CASHOUT_FAILED";
+  const actualFee = fee !== undefined ? Number(fee) : Number(meta.fee || 0);
+  const netAmount = Math.max(0, Number(meta.amount || amount) - actualFee);
+
+  meta.status = newStatus;
+  meta.fee = actualFee;
+  meta.isFeeEstimated = false;
+  meta.netAmount = netAmount;
+  meta.payoutRef = payoutRef;
+  meta.settledAt = processedAt || new Date().toISOString();
+
+  await prisma.auditLog.create({
+    data: {
+      action: newStatus === "CASHOUT_PROVIDER_CONFIRMED" ? "SWEEP_PROVIDER_CONFIRMED" : "SWEEP_FAILED",
+      entityType: "SETTLEMENT_SWEEP",
+      entityId: meta.sweepReference || matchingLog.entityId,
+      metadata: JSON.stringify(meta),
+    },
+  });
+
+  return {
+    matched: true,
+    status: newStatus,
+    sweepReference: meta.sweepReference || matchingLog.entityId,
+  };
 }
 
 /**
  * Reconciles an executed sweep with an incoming Android Bridge SMS notification
  * received on the Airtel receiver SIM 0729974065.
- * Strictly treats Bridge SMS as supporting evidence of payout arrival,
- * without modifying original customer registration payments.
+ *
+ * Strict Production Safety Rules:
+ * 1. Bridge SMS is supporting evidence of wallet receipt arrival only.
+ * 2. Bridge SMS NEVER independently authorizes or triggers a payout.
+ * 3. Only matches existing CASHOUT_PROVIDER_CONFIRMED or CASHOUT_PENDING sweeps.
+ * 4. Destination must be confirmed as 0729974065 and sender must be Airtel.
  */
 export async function reconcileSweepWithBridgeSms({
   smsReference,
@@ -535,13 +850,21 @@ export async function reconcileSweepWithBridgeSms({
   amount: number;
   sender: string;
   smsBody: string;
-}): Promise<{ reconciled: boolean; matchedSweepRef?: string }> {
-  // Find recent matching successful sweep with same amount within last 48 hours
+}): Promise<{ reconciled: boolean; matchedSweepRef?: string; status?: SweepStatus }> {
+  // Check sender: Must be from official Airtel Money notification
+  const cleanSender = sender.toUpperCase();
+  const isAirtelSender = cleanSender.includes("AIRTEL") || cleanSender.includes("182");
+
+  if (!isAirtelSender) {
+    return { reconciled: false };
+  }
+
+  // Find recent confirmed or pending sweep within last 48 hours
   const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
   const recentSweeps = await prisma.auditLog.findMany({
     where: {
       entityType: "SETTLEMENT_SWEEP",
-      action: "SWEEP_SUCCESSFUL",
+      action: { in: ["SWEEP_PROVIDER_CONFIRMED", "SWEEP_PENDING", "SWEEP_SUCCESSFUL"] },
       createdAt: { gte: since },
     },
     orderBy: { createdAt: "desc" },
@@ -552,20 +875,25 @@ export async function reconcileSweepWithBridgeSms({
     try {
       if (!log.metadata) continue;
       const meta = JSON.parse(log.metadata);
-      // Compare netAmount or amount (considering fee tolerance)
+
+      // Verify destination is strictly 0729974065
+      if (meta.destinationPhone !== "0729974065") continue;
+
       const sweepAmount = Number(meta.amount || 0);
       const sweepNetAmount = Number(meta.netAmount || meta.amount || 0);
 
+      // Match amount against gross or net (fee tolerance)
       const isAmountMatch =
         Math.abs(sweepAmount - amount) <= 300 ||
         Math.abs(sweepNetAmount - amount) <= 50;
 
       if (isAmountMatch) {
-        // Record reconciliation audit log
-        meta.status = "RECONCILED";
+        meta.status = "RECONCILED" as SweepStatus;
+        meta.walletReceiptMatched = true;
         meta.reconciledAt = new Date().toISOString();
         meta.smsBridgeEvidenceRef = smsReference;
         meta.bridgeSmsSender = sender;
+        meta.bridgeSmsBody = smsBody;
 
         await prisma.auditLog.create({
           data: {
@@ -578,6 +906,7 @@ export async function reconcileSweepWithBridgeSms({
 
         return {
           reconciled: true,
+          status: "RECONCILED",
           matchedSweepRef: meta.sweepReference || log.entityId,
         };
       }
