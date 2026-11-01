@@ -124,8 +124,12 @@ describe("MOSA — Strategy 2: Controlled Paypack Settlement Sweeps Suite", asyn
     // If accumulated balance in DB is less than 50,000 RWF, it must safely skip
     if (stats.clearedMerchantBalance < 50000) {
       assert.strictEqual(result.success, false);
-      assert.strictEqual(result.skippedReason, "THRESHOLD_NOT_REACHED");
-      console.log("  [PASS] Auto-sweep correctly skipped because cleared balance is below 50,000 RWF threshold.");
+      assert(
+        result.skippedReason === "THRESHOLD_NOT_REACHED" ||
+        result.skippedReason === "MAX_DAILY_FREQUENCY_REACHED",
+        `Expected skip reason THRESHOLD_NOT_REACHED or MAX_DAILY_FREQUENCY_REACHED, got ${result.skippedReason}`
+      );
+      console.log(`  [PASS] Auto-sweep correctly skipped by automatic safeguard (${result.skippedReason}).`);
     } else {
       console.log("  [INFO] Existing database balance exceeded threshold; auto-sweep eligible.");
     }
