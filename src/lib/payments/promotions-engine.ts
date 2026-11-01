@@ -548,6 +548,29 @@ export async function confirmFreeRegistrationWithWaiver({
       },
     });
 
+    // Resolve any outstanding registration and renewal reminders
+    await tx.businessReminder.updateMany({
+      where: {
+        businessId: business.id,
+        type: {
+          in: [
+            "REGISTRATION_FEE_DUE",
+            "RENEWAL_30D",
+            "RENEWAL_14D",
+            "RENEWAL_7D",
+            "RENEWAL_EXPIRY_DAY",
+            "RENEWAL_GRACE_PERIOD",
+            "REGISTRATION_EXPIRED",
+          ],
+        },
+        isResolved: false,
+      },
+      data: {
+        isResolved: true,
+        resolvedAt: now,
+      },
+    }).catch(() => null);
+
     // 4. Increment promotion usage if applied
     if (promo) {
       await tx.feePromotion.update({

@@ -209,6 +209,52 @@ export async function initiateRegistrationPayment({
     throw new Error(`Payment provider ${provider} is not currently enabled.`);
   }
 
+  // Check if an active pending registration payment already exists for this business
+  const existingPending = await prisma.registrationPayment.findFirst({
+    where: {
+      businessId,
+      paymentType: "REGISTRATION",
+      status: { in: ["PENDING", "WAITING_FOR_CUSTOMER_APPROVAL"] },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (existingPending) {
+    // If pending payment was created within the last 15 minutes, reuse it to prevent duplicate open invoices
+    const isRecent = Date.now() - new Date(existingPending.createdAt).getTime() < 15 * 60 * 1000;
+    if (isRecent) {
+      const updatedPayment = await prisma.registrationPayment.update({
+        where: { id: existingPending.id },
+        data: {
+          provider,
+          phoneNumber: phoneNumber || existingPending.phoneNumber,
+        },
+      });
+
+      return {
+        isAlreadyPaid: false,
+        isFree: false,
+        payment: updatedPayment,
+        feeAmount: updatedPayment.feeAmount,
+        baseFeeAmount: feeResult.baseFee,
+        discountApplied: updatedPayment.discountApplied,
+        promotion: feeResult.promotion,
+        currency: updatedPayment.currency,
+        paymentReference: updatedPayment.paymentReference,
+        periodCoveredStart: updatedPayment.periodCoveredStart,
+        periodCoveredEnd: updatedPayment.periodCoveredEnd,
+        providerConfig: {
+          name: providerConfig.name,
+          accountNumber: providerConfig.accountNumber,
+          accountName: providerConfig.accountName,
+          instructions: providerConfig.instructions,
+          instructionsRw: providerConfig.instructionsRw,
+        },
+        message: `Existing payment reference ${updatedPayment.paymentReference} reused.`,
+      };
+    }
+  }
+
   // Generate unique human-readable payment reference: MOSA-REG-YYYYMMDD-XXXXX
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const randomSuffix = crypto.randomBytes(3).toString("hex").toUpperCase();
@@ -473,6 +519,29 @@ export async function confirmPaymentAndActivateBusiness({
         data: { currentUsageCount: { increment: 1 } },
       }).catch(() => null);
     }
+
+    // Resolve any outstanding registration and renewal reminders upon successful confirmation
+    await tx.businessReminder.updateMany({
+      where: {
+        businessId: payment.businessId,
+        type: {
+          in: [
+            "REGISTRATION_FEE_DUE",
+            "RENEWAL_30D",
+            "RENEWAL_14D",
+            "RENEWAL_7D",
+            "RENEWAL_EXPIRY_DAY",
+            "RENEWAL_GRACE_PERIOD",
+            "REGISTRATION_EXPIRED",
+          ],
+        },
+        isResolved: false,
+      },
+      data: {
+        isResolved: true,
+        resolvedAt: now,
+      },
+    }).catch(() => null);
 
     // Create persistent audit log
     await tx.auditLog.create({

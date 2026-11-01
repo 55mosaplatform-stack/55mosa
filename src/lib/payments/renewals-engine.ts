@@ -136,6 +136,29 @@ export async function initiateAnnualRenewalPayment({
         });
       }
 
+      // Resolve any outstanding registration and renewal reminders
+      await tx.businessReminder.updateMany({
+        where: {
+          businessId: business.id,
+          type: {
+            in: [
+              "REGISTRATION_FEE_DUE",
+              "RENEWAL_30D",
+              "RENEWAL_14D",
+              "RENEWAL_7D",
+              "RENEWAL_EXPIRY_DAY",
+              "RENEWAL_GRACE_PERIOD",
+              "REGISTRATION_EXPIRED",
+            ],
+          },
+          isResolved: false,
+        },
+        data: {
+          isResolved: true,
+          resolvedAt: new Date(),
+        },
+      }).catch(() => null);
+
       await tx.auditLog.create({
         data: {
           actorId: payerUserId,
@@ -179,6 +202,50 @@ export async function initiateAnnualRenewalPayment({
 
   if (!providerConfig) {
     throw new Error(`Payment provider ${provider} is not currently enabled.`);
+  }
+
+  // Check if an active pending renewal invoice already exists for this business
+  const existingPendingRenewal = await prisma.registrationPayment.findFirst({
+    where: {
+      businessId,
+      paymentType: "ANNUAL_RENEWAL",
+      status: { in: ["PENDING", "WAITING_FOR_CUSTOMER_APPROVAL"] },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (existingPendingRenewal) {
+    const isRecent = Date.now() - new Date(existingPendingRenewal.createdAt).getTime() < 15 * 60 * 1000;
+    if (isRecent) {
+      const updatedRenewal = await prisma.registrationPayment.update({
+        where: { id: existingPendingRenewal.id },
+        data: {
+          provider,
+          phoneNumber: phoneNumber || existingPendingRenewal.phoneNumber,
+        },
+      });
+
+      return {
+        success: true,
+        isFree: false,
+        payment: updatedRenewal,
+        renewalFee: updatedRenewal.feeAmount,
+        baseRenewalFee: feeResult.baseFee,
+        discountApplied: updatedRenewal.discountApplied,
+        promotion: feeResult.promotion,
+        currency: updatedRenewal.currency,
+        paymentReference: updatedRenewal.paymentReference,
+        periodCoveredStart: updatedRenewal.periodCoveredStart,
+        periodCoveredEnd: updatedRenewal.periodCoveredEnd,
+        providerConfig: {
+          name: providerConfig.name,
+          accountNumber: providerConfig.accountNumber,
+          accountName: providerConfig.accountName,
+          instructions: providerConfig.instructions,
+          instructionsRw: providerConfig.instructionsRw,
+        },
+      };
+    }
   }
 
   // Generate unique renewal reference: MOSA-REN-YYYYMMDD-XXXXX
@@ -339,6 +406,29 @@ export async function grantRegistrationOrRenewalWaiver({
         waiverGrantedAt: new Date(),
       },
     });
+
+    // Resolve any outstanding registration and renewal reminders
+    await tx.businessReminder.updateMany({
+      where: {
+        businessId: business.id,
+        type: {
+          in: [
+            "REGISTRATION_FEE_DUE",
+            "RENEWAL_30D",
+            "RENEWAL_14D",
+            "RENEWAL_7D",
+            "RENEWAL_EXPIRY_DAY",
+            "RENEWAL_GRACE_PERIOD",
+            "REGISTRATION_EXPIRED",
+          ],
+        },
+        isResolved: false,
+      },
+      data: {
+        isResolved: true,
+        resolvedAt: new Date(),
+      },
+    }).catch(() => null);
 
     // 4. Record permanent audit log
     await tx.auditLog.create({

@@ -79,6 +79,7 @@ import {
 
 import { SUPPORTED_COUNTRIES } from "@/components/location/SmartLocationForm";
 import { UrubutoStyleCheckout } from "@/components/payments/UrubutoStyleCheckout";
+import { PaymentsAndRegistrationSection } from "@/components/owner/PaymentsAndRegistrationSection";
 
 const RWANDA_PROVINCES: Record<string, string[]> = {
   "City of Kigali": ["Nyarugenge", "Gasabo", "Kicukiro"],
@@ -112,8 +113,8 @@ export default function OwnerDashboardPage() {
     "overview" | "profile" | "location" | "hours" | "catalog" | "media" | "offers" | "assistant" | "history" | "reminders" | "account"
   >("overview");
 
-  // 7 Core Task-Oriented Business Navigation Sections
-  type OwnerSection = "overview" | "my_business" | "catalog" | "content" | "orders_bookings" | "notifications" | "settings";
+  // 8 Core Task-Oriented Business Navigation Sections
+  type OwnerSection = "overview" | "my_business" | "catalog" | "content" | "orders_bookings" | "payments" | "notifications" | "settings";
   const [activeSection, setActiveSection] = useState<OwnerSection>("overview");
   const [myBusinessSubTab, setMyBusinessSubTab] = useState<"profile" | "cover" | "location" | "hours">("profile");
   const [contentSubTab, setContentSubTab] = useState<"updates" | "opportunities" | "photos" | "videos" | "offers">("updates");
@@ -959,6 +960,13 @@ export default function OwnerDashboardPage() {
   useEffect(() => {
     loadOwnerData();
     loadDemands();
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const sec = params.get("section") || params.get("tab");
+      if (sec === "payments") {
+        setActiveSection("payments");
+      }
+    }
   }, [user]);
 
   useEffect(() => {
@@ -2162,11 +2170,7 @@ export default function OwnerDashboardPage() {
           </div>
           <button
             type="button"
-            onClick={() => {
-              setOwnerRenewModalOpen(true);
-              setRenewPayment(null);
-              setRenewError("");
-            }}
+            onClick={() => setActiveSection("payments")}
             className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer shrink-0"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -2197,11 +2201,7 @@ export default function OwnerDashboardPage() {
           </div>
           <button
             type="button"
-            onClick={() => {
-              setOwnerRenewModalOpen(true);
-              setRenewPayment(null);
-              setRenewError("");
-            }}
+            onClick={() => setActiveSection("payments")}
             className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer shrink-0"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -2245,10 +2245,10 @@ export default function OwnerDashboardPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
-              onClick={() => setOwnerReceiptModalOpen(true)}
+              onClick={() => setActiveSection("payments")}
               className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer shrink-0"
             >
-              <Printer className="w-3.5 h-3.5" />
+              <Receipt className="w-3.5 h-3.5" />
               <span>{lang === "rw" ? "Reba Inyemezabwishyu" : "View & Print Receipt"}</span>
             </button>
             <button
@@ -2276,18 +2276,18 @@ export default function OwnerDashboardPage() {
               </p>
             </div>
           </div>
-          <Link
-            href="/register-business"
-            className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1 transition shrink-0"
+          <button
+            onClick={() => setActiveSection("payments")}
+            className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1 transition shrink-0 cursor-pointer"
           >
             <span>Complete Payment</span>
-          </Link>
+          </button>
         </div>
       ) : null}
 
-      {/* 7 Task-Oriented Business Navigation Sections */}
+      {/* 8 Task-Oriented Business Navigation Sections */}
       <div className="bg-white rounded-3xl border border-slate-200 p-2 sm:p-3 shadow-card">
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
           {[
             { id: "overview", label: lang === "rw" ? "Incamake" : "Overview", sub: lang === "rw" ? "Ibikorwa by'uyu munsi" : "Status & Actions", icon: Layers },
             { id: "my_business", label: lang === "rw" ? "Ubucuruzi" : "My Business", sub: lang === "rw" ? "Umwirondoro & Ikarita" : "Profile, Map & Hours", icon: Store },
@@ -2312,6 +2312,13 @@ export default function OwnerDashboardPage() {
                 : (lang === "rw" ? "Ibyatumijwe" : "Orders"), 
               sub: lang === "rw" ? "Kuri WhatsApp" : "Via WhatsApp", 
               icon: Smartphone 
+            },
+            { 
+              id: "payments", 
+              label: lang === "rw" ? "Kwishyura" : "Payments", 
+              sub: lang === "rw" ? "Inyemezabwishyu" : "Invoices & Receipts", 
+              icon: CreditCard,
+              count: (registrationPayment?.status === "PENDING" || business?.renewalStatus === "GRACE_PERIOD" || business?.renewalStatus === "DUE_SOON" || business?.renewalStatus === "SUSPENDED" || (!business?.registrationConfirmedAt && business?.status === "PENDING")) ? 1 : 0 
             },
             { 
               id: "notifications", 
@@ -5766,6 +5773,18 @@ export default function OwnerDashboardPage() {
         </div>
       )}
 
+      {/* SECTION: PAYMENTS & REGISTRATION */}
+      {activeSection === "payments" && business && (
+        <PaymentsAndRegistrationSection
+          businessId={business.id}
+          business={business}
+          lang={lang}
+          onPaymentCompleted={async () => {
+            await loadOwnerData();
+          }}
+        />
+      )}
+
       {/* SECTION 6: NOTIFICATIONS, REMINDERS & AUDIT HISTORY */}
       {activeSection === "notifications" && (
         <div className="space-y-6">
@@ -5894,17 +5913,19 @@ export default function OwnerDashboardPage() {
                     {r.actionUrl && (
                       <button
                         onClick={() => {
-                          const tabMatch = r.actionUrl.match(/tab=([a-z]+)/);
-                          if (tabMatch && tabMatch[1]) {
-                            const tab = tabMatch[1];
-                            if (tab === "catalog") setActiveSection("catalog");
-                            else if (tab === "profile" || tab === "location" || tab === "hours") {
-                              setActiveSection("my_business");
-                              setMyBusinessSubTab(tab as any);
-                            } else if (tab === "media") {
-                              setActiveSection("content");
-                              setContentSubTab("photos");
-                            }
+                          const sectionMatch = r.actionUrl.match(/section=([a-z_]+)/);
+                          const tabMatch = r.actionUrl.match(/tab=([a-z_]+)/);
+                          const target = (sectionMatch && sectionMatch[1]) || (tabMatch && tabMatch[1]);
+                          if (target === "payments") {
+                            setActiveSection("payments");
+                          } else if (target === "catalog") {
+                            setActiveSection("catalog");
+                          } else if (target === "profile" || target === "location" || target === "hours") {
+                            setActiveSection("my_business");
+                            setMyBusinessSubTab(target as any);
+                          } else if (target === "media") {
+                            setActiveSection("content");
+                            setContentSubTab("photos");
                           }
                         }}
                         className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold border border-slate-300 text-xs shrink-0 self-start sm:self-center cursor-pointer"
