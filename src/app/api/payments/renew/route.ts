@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { initiateAnnualRenewalPayment } from "@/lib/payments/renewals-engine";
 
 export async function POST(req: NextRequest) {
@@ -70,6 +71,34 @@ export async function POST(req: NextRequest) {
         provider: provider as any,
       });
 
+      // If carrier central push is not yet configured, gracefully fallback to the
+      // official verified USSD direct dial route so customer can authorize via phone dialer.
+      if (!pushResult.success && pushResult.routeInfo) {
+        const updatedPayment = await prisma.registrationPayment.update({
+          where: { id: (result.payment as any).id },
+          data: {
+            status: "WAITING_FOR_CUSTOMER_APPROVAL",
+            rawCallbackPayload: JSON.stringify({
+              routeInfo: pushResult.routeInfo,
+              missingRequirements: pushResult.missingRequirements,
+              ussdFallback: true,
+              dispatchedAt: new Date().toISOString(),
+            }),
+          },
+        });
+
+        return NextResponse.json({
+          ...result,
+          payment: updatedPayment,
+          pushResult,
+          promptDispatched: false,
+          isPushAvailable: false,
+          routeInfo: pushResult.routeInfo,
+          message: pushResult.message,
+          missingRequirements: pushResult.missingRequirements,
+        });
+      }
+
       if (!pushResult.success) {
         return NextResponse.json(
           {
@@ -81,6 +110,12 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
+
+      // Mark payment as waiting for customer approval
+      await prisma.registrationPayment.update({
+        where: { id: (result.payment as any).id },
+        data: { status: "WAITING_FOR_CUSTOMER_APPROVAL" },
+      }).catch(() => null);
     }
 
     return NextResponse.json({

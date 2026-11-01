@@ -54,8 +54,8 @@ export function UrubutoStyleCheckout({
 }: UrubutoStyleCheckoutProps) {
   const { lang, t } = useLanguage();
 
-  // Selected mode: "MTN_MOMO", "AIRTEL_MONEY", "BANK_TRANSFER"
-  const [selectedProvider, setSelectedProvider] = useState<"MTN_MOMO" | "AIRTEL_MONEY" | "BANK_TRANSFER">("AIRTEL_MONEY");
+  // Selected mode: "MTN_MOMO", "AIRTEL_MONEY", "EKASH", "BANK_TRANSFER"
+  const [selectedProvider, setSelectedProvider] = useState<"MTN_MOMO" | "AIRTEL_MONEY" | "EKASH" | "BANK_TRANSFER">("AIRTEL_MONEY");
   
   // Payer Phone
   const [phoneInput, setPhoneInput] = useState(defaultPhone || "");
@@ -67,6 +67,8 @@ export function UrubutoStyleCheckout({
 
   const [activePayment, setActivePayment] = useState<any>(null);
   const [activeReceipt, setActiveReceipt] = useState<any>(null);
+  const [routeInfo, setRouteInfo] = useState<any>(null);
+  const [promptDispatched, setPromptDispatched] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -84,7 +86,7 @@ export function UrubutoStyleCheckout({
     if (!phoneInput) return null;
     return detectCarrierAndValidate(
       phoneInput,
-      selectedProvider === "BANK_TRANSFER" ? undefined : selectedProvider
+      selectedProvider === "BANK_TRANSFER" ? undefined : (selectedProvider as any)
     );
   }, [phoneInput, selectedProvider]);
 
@@ -144,6 +146,10 @@ export function UrubutoStyleCheckout({
 
       if (data.success && data.payment) {
         const status = data.payment.status;
+
+        if (data.payment.routeInfo) {
+          setRouteInfo(data.payment.routeInfo);
+        }
 
         if (status === "CONFIRMED") {
           setPaymentPhase("SUCCESSFUL");
@@ -260,12 +266,17 @@ export function UrubutoStyleCheckout({
 
     setIsSubmitting(true);
     try {
+      const effectiveProvider =
+        providerToUse === "EKASH"
+          ? (carrierValidation?.detectedCarrier === "MTN_MOMO" ? "MTN_MOMO" : "AIRTEL_MONEY")
+          : providerToUse;
+
       const res = await fetch(initiateEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           businessId,
-          provider: providerToUse,
+          provider: effectiveProvider,
           phoneNumber: carrierValidation.normalizedPhone,
         }),
       });
@@ -274,14 +285,20 @@ export function UrubutoStyleCheckout({
 
       if (data.success) {
         setActivePayment(data.payment);
-        setCountdownSeconds(120); // 2 minute countdown
+        if (data.routeInfo) {
+          setRouteInfo(data.routeInfo);
+        }
+        setPromptDispatched(Boolean(data.promptDispatched));
+        setCountdownSeconds(180); // 3 minute window for USSD / approval
         setPaymentPhase("WAITING_APPROVAL");
         setStatusMessage(
           data.promptDispatched
             ? (lang === "rw"
                 ? `Ubusabe bwo kwishyura bwoherejwe kuri ${carrierValidation.normalizedPhone}. Reba kuri telefoni yawe ushyiremo PIN.`
                 : `Payment prompt sent to ${carrierValidation.normalizedPhone}. Please enter your Mobile Money PIN on your phone.`)
-            : "Payment initiated."
+            : (lang === "rw"
+                ? `Kanda kuri bouton yo guhamagara hasi (${data.routeInfo?.ussdDialString || "*182#"}) ushyiremo PIN kuri telefoni yawe.`
+                : `Tap the direct dial button below (${data.routeInfo?.ussdDialString || "*182#"}) on your phone and enter your Mobile Money PIN.`)
         );
       } else {
         setErrorMessage(data.error || "Failed to dispatch mobile money payment request.");
@@ -447,7 +464,7 @@ export function UrubutoStyleCheckout({
                   <label className="font-bold text-xs text-slate-700 block mb-2 uppercase tracking-wider">
                     {lang === "rw" ? "1. Hitamo Uburyo bwo Kwishyura:" : "1. Select Payment Channel:"}
                   </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                     {/* Airtel Money Tab */}
                     <button
                       type="button"
@@ -455,23 +472,23 @@ export function UrubutoStyleCheckout({
                         setSelectedProvider("AIRTEL_MONEY");
                         setErrorMessage(null);
                       }}
-                      className={`p-4 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between relative ${
+                      className={`p-3.5 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between relative ${
                         selectedProvider === "AIRTEL_MONEY"
-                          ? "border-red-500 bg-red-50/60 ring-2 ring-red-500/20 shadow-sm"
+                          ? "border-red-500 bg-red-50/70 ring-2 ring-red-500/20 shadow-sm"
                           : "border-slate-200 hover:border-slate-300 bg-white"
                       }`}
                     >
-                      <div className="flex items-center justify-between w-full mb-2">
-                        <div className="w-8 h-8 rounded-xl bg-red-100 text-red-600 flex items-center justify-center font-bold text-xs">
-                          <Smartphone className="w-4 h-4" />
+                      <div className="flex items-center justify-between w-full mb-1.5">
+                        <div className="w-7 h-7 rounded-lg bg-red-100 text-red-600 flex items-center justify-center font-bold text-xs">
+                          <Smartphone className="w-3.5 h-3.5" />
                         </div>
-                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-600 text-white">
-                          Airtel Money
+                        <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-red-600 text-white">
+                          Airtel
                         </span>
                       </div>
                       <div>
-                        <div className="font-black text-sm text-slate-900">Airtel Money</div>
-                        <div className="text-[11px] text-slate-500">Instant Phone PIN Prompt</div>
+                        <div className="font-black text-xs sm:text-sm text-slate-900">Airtel Money</div>
+                        <div className="text-[10px] text-slate-500">PIN Prompt / 1-Tap</div>
                       </div>
                     </button>
 
@@ -482,23 +499,50 @@ export function UrubutoStyleCheckout({
                         setSelectedProvider("MTN_MOMO");
                         setErrorMessage(null);
                       }}
-                      className={`p-4 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between relative ${
+                      className={`p-3.5 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between relative ${
                         selectedProvider === "MTN_MOMO"
-                          ? "border-yellow-500 bg-yellow-50/60 ring-2 ring-yellow-500/20 shadow-sm"
+                          ? "border-yellow-500 bg-yellow-50/70 ring-2 ring-yellow-500/20 shadow-sm"
                           : "border-slate-200 hover:border-slate-300 bg-white"
                       }`}
                     >
-                      <div className="flex items-center justify-between w-full mb-2">
-                        <div className="w-8 h-8 rounded-xl bg-yellow-100 text-yellow-700 flex items-center justify-center font-bold text-xs">
-                          <Smartphone className="w-4 h-4" />
+                      <div className="flex items-center justify-between w-full mb-1.5">
+                        <div className="w-7 h-7 rounded-lg bg-yellow-100 text-yellow-700 flex items-center justify-center font-bold text-xs">
+                          <Smartphone className="w-3.5 h-3.5" />
                         </div>
-                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-yellow-400 text-slate-950">
+                        <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-yellow-400 text-slate-950">
                           MTN MoMo
                         </span>
                       </div>
                       <div>
-                        <div className="font-black text-sm text-slate-900">MTN MoMo</div>
-                        <div className="text-[11px] text-slate-500">Instant Phone PIN Prompt</div>
+                        <div className="font-black text-xs sm:text-sm text-slate-900">MTN MoMo</div>
+                        <div className="text-[10px] text-slate-500">PIN Prompt / 1-Tap</div>
+                      </div>
+                    </button>
+
+                    {/* eKash Interoperability Tab */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedProvider("EKASH");
+                        setErrorMessage(null);
+                      }}
+                      className={`p-3.5 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between relative ${
+                        selectedProvider === "EKASH"
+                          ? "border-emerald-500 bg-emerald-50/70 ring-2 ring-emerald-500/20 shadow-sm"
+                          : "border-slate-200 hover:border-slate-300 bg-white"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full mb-1.5">
+                        <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </div>
+                        <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-600 text-white">
+                          eKash
+                        </span>
+                      </div>
+                      <div>
+                        <div className="font-black text-xs sm:text-sm text-slate-900">eKash Cross-Net</div>
+                        <div className="text-[10px] text-slate-500">MTN ↔ Airtel Switch</div>
                       </div>
                     </button>
 
@@ -509,25 +553,47 @@ export function UrubutoStyleCheckout({
                         setSelectedProvider("BANK_TRANSFER");
                         setErrorMessage(null);
                       }}
-                      className={`p-4 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between relative ${
+                      className={`p-3.5 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between relative ${
                         selectedProvider === "BANK_TRANSFER"
-                          ? "border-blue-500 bg-blue-50/60 ring-2 ring-blue-500/20 shadow-sm"
+                          ? "border-blue-500 bg-blue-50/70 ring-2 ring-blue-500/20 shadow-sm"
                           : "border-slate-200 hover:border-slate-300 bg-white"
                       }`}
                     >
-                      <div className="flex items-center justify-between w-full mb-2">
-                        <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
-                          <Building className="w-4 h-4" />
+                      <div className="flex items-center justify-between w-full mb-1.5">
+                        <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
+                          <Building className="w-3.5 h-3.5" />
                         </div>
-                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-600 text-white">
+                        <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-600 text-white">
                           Bank
                         </span>
                       </div>
                       <div>
-                        <div className="font-black text-sm text-slate-900">Bank Transfer</div>
-                        <div className="text-[11px] text-slate-500">Bank of Kigali / I&M Bank</div>
+                        <div className="font-black text-xs sm:text-sm text-slate-900">Bank Transfer</div>
+                        <div className="text-[10px] text-slate-500">BK / I&amp;M Bank</div>
                       </div>
                     </button>
+                  </div>
+                </div>
+
+                {/* MOSA Collection Destination Transparent Notice */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-2xl bg-slate-900 text-white text-xs gap-2 border border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <Building className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <div>
+                      <span className="text-slate-400">MOSA Collection Destination: </span>
+                      <strong className="text-white">MOSA Network (Rwanda) Ltd</strong>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      {selectedProvider === "BANK_TRANSFER"
+                        ? "Bank of Kigali / I&M"
+                        : selectedProvider === "MTN_MOMO"
+                        ? "Airtel SIM: 0729974065 (via eKash)"
+                        : selectedProvider === "EKASH"
+                        ? "RSwitch Interoperable Wallet"
+                        : "Airtel Money: 0729974065"}
+                    </span>
                   </div>
                 </div>
 
@@ -703,26 +769,132 @@ export function UrubutoStyleCheckout({
             <div className="space-y-2 max-w-md mx-auto">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-amber-400/20 text-amber-300 border border-amber-400/30">
                 <Clock className="w-3.5 h-3.5 animate-spin" />
-                <span>Waiting for Customer PIN Approval</span>
+                <span>
+                  {promptDispatched
+                    ? "Waiting for Customer PIN Approval"
+                    : "Phone Authorization Active — Dial to Enter PIN"}
+                </span>
               </div>
               <h4 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-                {lang === "rw" ? "Reba Kuri Telefoni Yawe" : "Please Check Your Phone"}
+                {promptDispatched
+                  ? (lang === "rw" ? "Reba Kuri Telefoni Yawe" : "Please Check Your Phone")
+                  : (lang === "rw" ? "Emeza Kwishyura Kuri Telefoni Yawe" : "Complete Payment on Your Phone")}
               </h4>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                {lang === "rw" ? (
-                  <>
-                    Ubusabe bwo kwishyura <strong>{amountToPay.toLocaleString()} RWF</strong> bwoherejwe kuri{" "}
-                    <strong className="text-emerald-400 font-mono">{phoneInput}</strong>. Nyamuneka shyiramo umubare
-                    w'ibanga wawe (PIN) kuri telefoni kugira ngo wemeze kwishyura.
-                  </>
+                {promptDispatched ? (
+                  lang === "rw" ? (
+                    <>
+                      Ubusabe bwo kwishyura <strong>{amountToPay.toLocaleString()} RWF</strong> bwoherejwe kuri{" "}
+                      <strong className="text-emerald-400 font-mono">{phoneInput}</strong>. Nyamuneka shyiramo umubare
+                      w'ibanga wawe (PIN) kuri telefoni kugira ngo wemeze kwishyura.
+                    </>
+                  ) : (
+                    <>
+                      A payment prompt of <strong>{amountToPay.toLocaleString()} RWF</strong> has been sent to{" "}
+                      <strong className="text-emerald-400 font-mono">{phoneInput}</strong>. Enter your Mobile Money PIN
+                      on your phone to approve.
+                    </>
+                  )
                 ) : (
-                  <>
-                    A payment prompt of <strong>{amountToPay.toLocaleString()} RWF</strong> has been sent to{" "}
-                    <strong className="text-emerald-400 font-mono">{phoneInput}</strong>. Enter your Mobile Money PIN
-                    on your phone to approve.
-                  </>
+                  lang === "rw" ? (
+                    <>
+                      Koresha bouton yo guhamagara iri hasi kuri telefoni yawe (cyangwa kanda code yerekanywe) hanyuma
+                      ushyiremo umubare w'ibanga wawe (PIN).
+                    </>
+                  ) : (
+                    <>
+                      Use the 1-Tap Dial button below on your mobile phone (or dial the code shown) and enter your
+                      Mobile Money PIN to authorize payment.
+                    </>
+                  )
                 )}
               </p>
+            </div>
+
+            {/* 1-Tap Direct Dial & USSD Guidance Card */}
+            <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 text-left space-y-3.5 max-w-lg mx-auto shadow-inner">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                  <PhoneCall className="w-3.5 h-3.5" />
+                  <span>1-Tap Phone Dialing (Rwanda Telecom)</span>
+                </span>
+                <span className="text-[10px] font-mono text-slate-400">
+                  {routeInfo?.isEkash ? "eKash Cross-Net" : "On-Net Direct"}
+                </span>
+              </div>
+
+              {/* 1-Tap Dial Button for Mobile */}
+              <a
+                href={
+                  routeInfo?.ussdDialUrl ||
+                  (selectedProvider === "AIRTEL_MONEY"
+                    ? `tel:*182*1*1*0729974065*${amountToPay}%23`
+                    : `tel:*182*1*2*0729974065*${amountToPay}%23`)
+                }
+                className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-400 hover:from-emerald-400 hover:to-emerald-300 text-slate-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
+              >
+                <PhoneCall className="w-4 h-4 text-slate-950" />
+                <span>
+                  {lang === "rw" ? "Kanda Guhamagara Code Kuri Telefoni" : "Tap to Open Phone Dialer"} (
+                  {routeInfo?.ussdDialString ||
+                    (selectedProvider === "AIRTEL_MONEY"
+                      ? `*182*1*1*0729974065*${amountToPay}#`
+                      : `*182*1*2*0729974065*${amountToPay}#`)}
+                  )
+                </span>
+              </a>
+
+              {/* Copyable USSD Code Display */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-800">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block">USSD Dial Code:</span>
+                  <span className="font-mono text-sm font-black text-amber-300 select-all">
+                    {routeInfo?.ussdDialString ||
+                      (selectedProvider === "AIRTEL_MONEY"
+                        ? `*182*1*1*0729974065*${amountToPay}#`
+                        : `*182*1*2*0729974065*${amountToPay}#`)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const code =
+                      routeInfo?.ussdDialString ||
+                      (selectedProvider === "AIRTEL_MONEY"
+                        ? `*182*1*1*0729974065*${amountToPay}#`
+                        : `*182*1*2*0729974065*${amountToPay}#`);
+                    navigator.clipboard?.writeText(code);
+                    alert("USSD Code copied! Dial it on your mobile phone to enter your PIN.");
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copy</span>
+                </button>
+              </div>
+
+              {/* Step by Step Instructions */}
+              <div className="text-[11px] text-slate-300 space-y-1.5 bg-slate-900/60 p-3 rounded-xl border border-slate-800/80">
+                <div className="font-bold text-white flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{lang === "rw" ? "Amabwiriza yo kwishyura:" : "Payment Instructions:"}</span>
+                </div>
+                <p className="text-slate-300 leading-relaxed">
+                  {lang === "rw"
+                    ? routeInfo?.instructionsRw ||
+                      `Kanda code kuri telefoni yawe hanyuma ushyiremo umubare w'ibanga (PIN).`
+                    : routeInfo?.instructionsEn ||
+                      `Dial the code on your mobile phone and enter your Mobile Money PIN.`}
+                </p>
+                {activePayment?.paymentReference && (
+                  <div className="pt-1 flex items-center justify-between text-[10px] text-slate-400">
+                    <span>
+                      Payment Ref / Impamvu:{" "}
+                      <strong className="text-emerald-400 font-mono">{activePayment.paymentReference}</strong>
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Countdown Timer */}

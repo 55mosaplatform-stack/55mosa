@@ -185,12 +185,14 @@ export async function POST(req: NextRequest) {
 
     if (suppliedDestination && typeof suppliedDestination === "string") {
       const cleanSupplied = suppliedDestination.replace(/[\s\-\+\(\)]/g, "").replace(/^250/, "0");
+      const allProviders = await prisma.paymentProviderConfig.findMany({ select: { accountNumber: true } });
       const validDestinations = [
         providerConfig.accountNumber,
+        ...allProviders.map((p) => p.accountNumber),
         authResult.device?.simPhoneNumber,
-        provider === "AIRTEL_MONEY" ? "0729974065" : null,
-        provider === "MTN_MOMO" ? "999888" : null,
-        provider === "MTN_MOMO" ? "0788123456" : null,
+        "0729974065", // Primary Airtel Money Receiving SIM
+        "999888",     // MTN MoMo Merchant Code
+        "0788123456", // MTN MoMo Account
       ]
         .filter(Boolean)
         .map((d) => String(d).replace(/[\s\-\+\(\)]/g, "").replace(/^250/, "0"));

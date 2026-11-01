@@ -3,7 +3,33 @@ import { prisma } from "@/lib/prisma";
 import { confirmPaymentAndActivateBusiness } from "./engine";
 
 export type SupportedPushProvider = "MTN_MOMO" | "AIRTEL_MONEY";
-export type PushPaymentStatus = "PENDING" | "CONFIRMED" | "FAILED" | "CANCELLED" | "EXPIRED";
+export type PushPaymentStatus =
+  | "PENDING"
+  | "WAITING_FOR_CUSTOMER_APPROVAL"
+  | "PROCESSING"
+  | "EVIDENCE_RECEIVED"
+  | "CONFIRMED"
+  | "FAILED"
+  | "CANCELLED"
+  | "EXPIRED"
+  | "RECONCILIATION_REQUIRED";
+
+export type PayerPaymentMethod = "AIRTEL_MONEY" | "MTN_MOMO" | "EKASH" | "BANK_TRANSFER";
+export type CollectionRouteType = "ON_NET" | "EKASH_CROSS_NETWORK" | "BANK_TRANSFER";
+
+export interface PaymentRouteInfo {
+  payerMethod: PayerPaymentMethod;
+  destinationProvider: string;
+  destinationAccount: string;
+  destinationAccountName: string;
+  routeType: CollectionRouteType;
+  ussdDialString: string;
+  ussdDialUrl: string;
+  instructionsEn: string;
+  instructionsRw: string;
+  isEkash: boolean;
+  supportsDirectPush: boolean;
+}
 
 export interface PushPaymentRequestParams {
   paymentReference: string;
@@ -13,6 +39,7 @@ export interface PushPaymentRequestParams {
   provider: SupportedPushProvider;
   description?: string;
   businessName?: string;
+  preferredDestination?: string;
 }
 
 export interface PushPaymentRequestResult {
@@ -23,6 +50,7 @@ export interface PushPaymentRequestResult {
   isSimulation: boolean;
   message: string;
   missingRequirements?: string[];
+  routeInfo?: PaymentRouteInfo;
   rawResponse?: any;
 }
 
@@ -32,6 +60,8 @@ export interface CarrierDetectionResult {
   detectedCarrier: SupportedPushProvider | "UNKNOWN";
   matchesSelectedProvider: boolean;
   warning?: string;
+  isEkashEligible?: boolean;
+  ekashNotice?: string;
 }
 
 /**
@@ -63,7 +93,7 @@ export function normalizeRwandaPhone(raw: string): string {
  */
 export function detectCarrierAndValidate(
   phone: string,
-  selectedProvider?: SupportedPushProvider
+  selectedProvider?: SupportedPushProvider | "EKASH" | "BANK_TRANSFER"
 ): CarrierDetectionResult {
   const normalized = normalizeRwandaPhone(phone);
   const digits = normalized.replace(/\D/g, "");
@@ -80,15 +110,26 @@ export function detectCarrierAndValidate(
 
   let matchesSelected = true;
   let warning: string | undefined;
+  let isEkashEligible = false;
+  let ekashNotice: string | undefined;
 
   if (detectedCarrier === "UNKNOWN") {
     warning = "Unknown carrier prefix. Mobile Money push prompts require an active MTN (078/079) or Airtel (072/073) number.";
     if (selectedProvider) matchesSelected = false;
-  } else if (selectedProvider && selectedProvider !== detectedCarrier) {
+  } else if (selectedProvider === "EKASH") {
+    matchesSelected = true;
+    isEkashEligible = true;
+    ekashNotice =
+      detectedCarrier === "MTN_MOMO"
+        ? "MTN MoMo payer paying via eKash national cross-network transfer to MOSA's Airtel collection wallet."
+        : "Airtel Money payer paying via eKash national cross-network transfer.";
+  } else if (selectedProvider && selectedProvider !== "BANK_TRANSFER" && selectedProvider !== detectedCarrier) {
     matchesSelected = false;
+    isEkashEligible = true;
     const carrierName = detectedCarrier === "MTN_MOMO" ? "MTN MoMo" : "Airtel Money";
     const selectedName = selectedProvider === "MTN_MOMO" ? "MTN MoMo" : "Airtel Money";
     warning = `Phone number belongs to ${carrierName}, but ${selectedName} is selected. Please switch provider to ensure phone prompt delivery.`;
+    ekashNotice = `Cross-network eKash interoperability is supported: ${carrierName} can pay directly to ${selectedName}.`;
   }
 
   return {
@@ -97,6 +138,129 @@ export function detectCarrierAndValidate(
     detectedCarrier,
     matchesSelectedProvider: matchesSelected,
     warning,
+    isEkashEligible,
+    ekashNotice,
+  };
+}
+
+/**
+ * Resolves the precise payment route between payer source method and MOSA collection destination.
+ * Computes exact USSD strings (*182*1*1*... for Airtel on-net, *182*1*2*... for eKash cross-network),
+ * 1-tap dialable URI links, and bilingual instructions.
+ */
+export async function resolvePaymentRoute({
+  payerMethod,
+  payerPhone,
+  amount,
+  preferredDestination,
+}: {
+  payerMethod: PayerPaymentMethod;
+  payerPhone?: string;
+  amount: number;
+  preferredDestination?: string;
+}): Promise<PaymentRouteInfo> {
+  let airtelConfig = await prisma.paymentProviderConfig.findUnique({ where: { provider: "AIRTEL_MONEY" } });
+  let mtnConfig = await prisma.paymentProviderConfig.findUnique({ where: { provider: "MTN_MOMO" } });
+  let bankConfig = await prisma.paymentProviderConfig.findUnique({ where: { provider: "BANK_TRANSFER" } });
+
+  const airtelNumber = airtelConfig?.accountNumber || "0729974065";
+  const airtelName = airtelConfig?.accountName || "MOSA Network (Rwanda) Ltd";
+
+  const mtnAccount = mtnConfig?.accountNumber || "0788123456";
+  const mtnName = mtnConfig?.accountName || "MOSA Network (Rwanda) Ltd";
+
+  const cleanAirtelNumber = airtelNumber.replace(/\D/g, "").replace(/^250/, "0");
+  const cleanMtnNumber = mtnAccount.replace(/[\s\-\+\(\)]/g, "").replace(/^250/, "0");
+
+  if (payerMethod === "BANK_TRANSFER") {
+    return {
+      payerMethod: "BANK_TRANSFER",
+      destinationProvider: "BANK_TRANSFER",
+      destinationAccount: bankConfig?.accountNumber || "00040-06912345-67 (BK) / 1000-45678-90 (I&M)",
+      destinationAccountName: bankConfig?.accountName || "MOSA Network (Rwanda) Ltd",
+      routeType: "BANK_TRANSFER",
+      ussdDialString: "",
+      ussdDialUrl: "",
+      instructionsEn: "Transfer via Bank of Kigali (00040-06912345-67) or I&M Bank (1000-45678-90). Include invoice reference in narration.",
+      instructionsRw: "Koresha Bank of Kigali (00040-06912345-67) cyangwa I&M Bank (1000-45678-90). Shyiramo reference muri narration.",
+      isEkash: false,
+      supportsDirectPush: false,
+    };
+  }
+
+  // Primary MOSA collection destination is Airtel Money 0729974065 unless MTN is configured and requested
+  const destProvider = preferredDestination === "MTN_MOMO" && mtnConfig?.isEnabled ? "MTN_MOMO" : "AIRTEL_MONEY";
+  const destAccount = destProvider === "AIRTEL_MONEY" ? cleanAirtelNumber : cleanMtnNumber;
+  const destName = destProvider === "AIRTEL_MONEY" ? airtelName : mtnName;
+
+  const actualPayerMethod: SupportedPushProvider =
+    payerMethod === "EKASH"
+      ? (payerPhone?.includes("78") || payerPhone?.includes("79") ? "MTN_MOMO" : "AIRTEL_MONEY")
+      : (payerMethod as SupportedPushProvider);
+
+  const isOnNet = actualPayerMethod === destProvider;
+  const isEkash = !isOnNet;
+
+  let ussdDialString = "";
+  let ussdDialUrl = "";
+  let instructionsEn = "";
+  let instructionsRw = "";
+
+  if (actualPayerMethod === "AIRTEL_MONEY") {
+    if (isOnNet) {
+      // Airtel to Airtel On-Net
+      ussdDialString = `*182*1*1*${destAccount}*${amount}#`;
+      ussdDialUrl = `tel:*182*1*1*${destAccount}*${amount}%23`;
+      instructionsEn = `From Airtel: Dial ${ussdDialString} and enter your Airtel Money PIN.`;
+      instructionsRw = `Kuri Airtel: Kanda ${ussdDialString} ushyiremo umubare w'ibanga (PIN).`;
+    } else {
+      // Airtel to MTN Cross-Net
+      ussdDialString = `*182*1*2*${destAccount}*${amount}#`;
+      ussdDialUrl = `tel:*182*1*2*${destAccount}*${amount}%23`;
+      instructionsEn = `From Airtel (eKash to MTN): Dial ${ussdDialString} and enter your Airtel Money PIN.`;
+      instructionsRw = `Kuri Airtel (eKash kuri MTN): Kanda ${ussdDialString} ushyiremo umubare w'ibanga (PIN).`;
+    }
+  } else {
+    // MTN Payer
+    if (destProvider === "AIRTEL_MONEY") {
+      // MTN to Airtel via eKash Interoperability
+      ussdDialString = `*182*1*2*${destAccount}*${amount}#`;
+      ussdDialUrl = `tel:*182*1*2*${destAccount}*${amount}%23`;
+      instructionsEn = `From MTN (eKash to Airtel): Dial ${ussdDialString} or dial *182*1*2#, enter ${destAccount}, enter ${amount} RWF, and enter your MoMo PIN.`;
+      instructionsRw = `Kuri MTN (eKash kuri Airtel): Kanda ${ussdDialString} cyangwa kanda *182*1*2#, shyiramo ${destAccount}, shyiramo ${amount} RWF, hanyuma ushyiremo PIN.`;
+    } else {
+      // MTN to MTN MoMoPay
+      const isMerchantCode = destAccount.includes("*") || destAccount.length <= 8;
+      if (isMerchantCode) {
+        const codeOnly = destAccount.replace(/\D/g, "");
+        ussdDialString = `*182*8*1*${codeOnly}*${amount}#`;
+        ussdDialUrl = `tel:*182*8*1*${codeOnly}*${amount}%23`;
+        instructionsEn = `From MTN MoMoPay: Dial ${ussdDialString} and enter your MoMo PIN.`;
+        instructionsRw = `Kuri MTN MoMoPay: Kanda ${ussdDialString} ushyiremo PIN yawe.`;
+      } else {
+        ussdDialString = `*182*1*1*${destAccount}*${amount}#`;
+        ussdDialUrl = `tel:*182*1*1*${destAccount}*${amount}%23`;
+        instructionsEn = `From MTN: Dial ${ussdDialString} and enter your MoMo PIN.`;
+        instructionsRw = `Kuri MTN: Kanda ${ussdDialString} ushyiremo PIN yawe.`;
+      }
+    }
+  }
+
+  const credStatus = getProviderCredentialStatus(actualPayerMethod);
+  const supportsDirectPush = credStatus.isConfigured && isOnNet;
+
+  return {
+    payerMethod: actualPayerMethod,
+    destinationProvider: destProvider,
+    destinationAccount: destAccount,
+    destinationAccountName: destName,
+    routeType: isEkash ? "EKASH_CROSS_NETWORK" : "ON_NET",
+    ussdDialString,
+    ussdDialUrl,
+    instructionsEn,
+    instructionsRw,
+    isEkash,
+    supportsDirectPush,
   };
 }
 
@@ -144,6 +308,7 @@ export async function requestMobileMoneyPayment({
   provider,
   description = "55 MOSA Business Registration Fee",
   businessName = "Business",
+  preferredDestination,
 }: PushPaymentRequestParams): Promise<PushPaymentRequestResult> {
   // 1. Validation
   if (currency.toUpperCase() !== "RWF") {
@@ -154,6 +319,14 @@ export async function requestMobileMoneyPayment({
   if (!carrierCheck.isValid) {
     throw new Error(`Invalid Rwandan mobile number: "${phoneNumber}". Expected format: +250 7X XXX XXXX.`);
   }
+
+  // Resolve exact routing (on-net vs eKash cross-network)
+  const routeInfo = await resolvePaymentRoute({
+    payerMethod: provider,
+    payerPhone: carrierCheck.normalizedPhone,
+    amount,
+    preferredDestination,
+  });
 
   // 2. Locate or create payment record
   let payment = await prisma.registrationPayment.findUnique({
@@ -173,6 +346,7 @@ export async function requestMobileMoneyPayment({
       promptDispatched: false,
       isSimulation: false,
       message: "Payment is already confirmed and active.",
+      routeInfo,
     };
   }
 
@@ -191,8 +365,9 @@ export async function requestMobileMoneyPayment({
       status: "FAILED",
       promptDispatched: false,
       isSimulation: false,
-      message: `Carrier merchant push API is not yet provisioned for ${provider}.`,
+      message: `Carrier merchant push API is not yet provisioned for ${provider}. Use direct USSD dial ${routeInfo.ussdDialString} on your phone to complete payment.`,
       missingRequirements: credStatus.missingRequirements,
+      routeInfo,
     };
   }
 
@@ -200,25 +375,26 @@ export async function requestMobileMoneyPayment({
   if (credStatus.isConfigured) {
     try {
       if (provider === "MTN_MOMO") {
-        return await executeMtnMoMoRequestToPay({
+        const liveResult = await executeMtnMoMoRequestToPay({
           paymentReference,
           amount,
           currency,
           phoneNumber: carrierCheck.normalizedPhone,
           description,
         });
+        return { ...liveResult, routeInfo };
       } else {
-        return await executeAirtelMoneyPushPayment({
+        const liveResult = await executeAirtelMoneyPushPayment({
           paymentReference,
           amount,
           currency,
           phoneNumber: carrierCheck.normalizedPhone,
           description,
         });
+        return { ...liveResult, routeInfo };
       }
     } catch (err: any) {
       console.error(`[CARRIER_PUSH_ERROR] Failed to send ${provider} push:`, err);
-      // Fall through to error response
       return {
         success: false,
         providerRequestId: "",
@@ -226,6 +402,7 @@ export async function requestMobileMoneyPayment({
         promptDispatched: false,
         isSimulation: false,
         message: `Carrier API rejected payment request: ${err.message}`,
+        routeInfo,
       };
     }
   }
@@ -233,20 +410,21 @@ export async function requestMobileMoneyPayment({
   // 4. Provider Sandbox / Simulator Mode (for end-to-end testing & demo)
   const simulatedRequestId = `${provider === "MTN_MOMO" ? "MTN-REQ" : "AIRTEL-TXN"}-${Date.now().toString().slice(-6)}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
 
-  // Update payment record with providerRequestId, phone, and PENDING status
+  // Update payment record with providerRequestId, phone, routeInfo, and WAITING_FOR_CUSTOMER_APPROVAL status
   await prisma.registrationPayment.update({
     where: { id: payment.id },
     data: {
       provider,
       phoneNumber: carrierCheck.normalizedPhone,
       providerTransactionRef: simulatedRequestId,
-      status: "PENDING",
+      status: "WAITING_FOR_CUSTOMER_APPROVAL",
       failureReason: null,
       rawCallbackPayload: JSON.stringify({
         simulated: true,
         dispatchedAt: new Date().toISOString(),
         phoneNumber: carrierCheck.normalizedPhone,
         providerRequestId: simulatedRequestId,
+        routeInfo,
       }),
     },
   });
@@ -254,10 +432,11 @@ export async function requestMobileMoneyPayment({
   return {
     success: true,
     providerRequestId: simulatedRequestId,
-    status: "PENDING",
+    status: "WAITING_FOR_CUSTOMER_APPROVAL",
     promptDispatched: true,
     isSimulation: true,
     message: `Payment request of ${amount.toLocaleString()} RWF dispatched to ${carrierCheck.normalizedPhone}. Please check your phone and enter your Mobile Money PIN.`,
+    routeInfo,
   };
 }
 
@@ -717,8 +896,8 @@ export async function checkAndReconcilePaymentStatus(paymentReference: string): 
     };
   }
 
-  // If pending, reconcile against carrier if live keys are configured
-  if (payment.status === "PENDING") {
+  // If in active lifecycle waiting confirmation, reconcile against carrier if live keys are configured
+  if (["PENDING", "WAITING_FOR_CUSTOMER_APPROVAL", "PROCESSING", "EVIDENCE_RECEIVED"].includes(payment.status)) {
     const credStatus = getProviderCredentialStatus(payment.provider as SupportedPushProvider);
     const isSimulated =
       payment.rawCallbackPayload?.includes('"simulated":true') ||
@@ -835,6 +1014,8 @@ export async function simulateSandboxCustomerAction({
   }
 
   const isSimulatedTestPayment =
+    process.env.ENABLE_PAYMENT_SIMULATOR === "true" ||
+    process.env.ALLOW_STAGING_PAYMENT_SIMULATION === "true" ||
     payment.rawCallbackPayload?.includes('"simulated":true') ||
     payment.providerTransactionRef?.startsWith("MTN-REQ-") ||
     payment.providerTransactionRef?.startsWith("AIRTEL-TXN-") ||

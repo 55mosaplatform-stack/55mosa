@@ -115,6 +115,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    let routeInfo = null;
+    try {
+      if (payment.rawCallbackPayload) {
+        const parsed = JSON.parse(payment.rawCallbackPayload);
+        routeInfo = parsed.routeInfo || null;
+      }
+    } catch {}
+
     return NextResponse.json(
       {
         success: true,
@@ -129,6 +137,7 @@ export async function GET(req: NextRequest) {
           verifiedAt: payment.verifiedAt,
           failureReason: payment.failureReason,
           createdAt: payment.createdAt,
+          routeInfo,
         },
         business: {
           id: payment.business.id,
