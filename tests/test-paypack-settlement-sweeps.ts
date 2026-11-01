@@ -1,5 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+
+// Enable high-fidelity simulator for automated pilot test verification
+process.env.ENABLE_PAYMENT_SIMULATOR = "true";
+process.env.ALLOW_STAGING_PAYMENT_SIMULATION = "true";
+
 import { prisma } from "../src/lib/prisma";
 import {
   getSettlementConfig,
