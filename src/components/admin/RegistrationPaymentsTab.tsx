@@ -41,8 +41,10 @@ import {
   Tag,
   Users,
   Archive,
+  Coins,
 } from "lucide-react";
 import { PaymentBridgeManagementModal } from "@/components/admin/PaymentBridgeManagementModal";
+import { PaypackTreasuryModal } from "@/components/admin/PaypackTreasuryModal";
 
 interface PaymentItem {
   id: string;
@@ -146,6 +148,9 @@ export function RegistrationPaymentsTab() {
 
   // Payment Bridge & SIM Management Modal State
   const [bridgeModalOpen, setBridgeModalOpen] = useState(false);
+
+  // Paypack Option A Treasury & Controlled Settlement Sweeps Modal State
+  const [treasuryModalOpen, setTreasuryModalOpen] = useState(false);
 
   // MTN Bridge Simulator State
   const [simulatorModalOpen, setSimulatorModalOpen] = useState(false);
@@ -751,6 +756,15 @@ export function RegistrationPaymentsTab() {
           >
             <Radio className="w-3.5 h-3.5 text-emerald-700 animate-pulse" />
             <span>Bridge &amp; SIM Control</span>
+          </button>
+
+          <button
+            onClick={() => setTreasuryModalOpen(true)}
+            className="px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-950 border border-indigo-300 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+            title="Option A Paypack Treasury & Airtel Settlement Sweeps"
+          >
+            <Coins className="w-3.5 h-3.5 text-indigo-700" />
+            <span>Treasury &amp; Sweeps</span>
           </button>
 
           <button
@@ -2575,6 +2589,15 @@ export function RegistrationPaymentsTab() {
         isOpen={bridgeModalOpen}
         onClose={() => {
           setBridgeModalOpen(false);
+          fetchPayments();
+        }}
+      />
+
+      {/* Section 8: Paypack Option A Treasury & Controlled Settlement Sweeps Modal */}
+      <PaypackTreasuryModal
+        isOpen={treasuryModalOpen}
+        onClose={() => {
+          setTreasuryModalOpen(false);
           fetchPayments();
         }}
       />

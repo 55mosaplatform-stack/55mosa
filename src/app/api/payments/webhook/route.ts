@@ -321,16 +321,17 @@ export async function POST(req: NextRequest) {
       verifiedBy,
     });
 
-    // 7. Automated Settlement Payout (Cashout) to Airtel Money SIM 0729974065
-    // When enabled, automatically sweeps cleared merchant funds to MOSA's primary Airtel wallet
-    if (getPaypackConfig().autoCashoutEnabled && result.success && !result.alreadyConfirmed) {
-      initiatePaypackCashout({
-        amount: Number(amountPaid),
-        destinationPhone: "0729974065",
-        paymentReference,
-      }).catch((err) => {
-        console.warn(`[PAYPACK_AUTO_CASHOUT_WARN]: ${err.message}`);
-      });
+    // 7. Strategy 2: Controlled Settlement Sweeps to Airtel Money SIM 0729974065
+    // Asynchronously checks accumulated cleared balance against configured threshold (50,000 RWF)
+    // and sweeps when eligible without delaying or blocking customer confirmation.
+    if (result.success && !result.alreadyConfirmed) {
+      import("@/lib/payments/paypack-settlement")
+        .then(({ executeSettlementSweep }) => {
+          return executeSettlementSweep({ forceManual: false });
+        })
+        .catch((err) => {
+          console.warn(`[PAYPACK_SETTLEMENT_SWEEP_WARN]: ${err.message}`);
+        });
     }
 
     return NextResponse.json({
