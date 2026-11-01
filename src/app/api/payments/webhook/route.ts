@@ -319,6 +319,115 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 5c. Provider Status Validation: If provider reported FAILED or CANCELLED, do not confirm
+    const reportedStatus = (payload.data?.status || payload.status || "").toLowerCase();
+    if (reportedStatus === "failed" || reportedStatus === "cancelled") {
+      if (paymentReference) {
+        await prisma.registrationPayment.updateMany({
+          where: { paymentReference, status: { in: ["PENDING", "WAITING_FOR_CUSTOMER_APPROVAL"] } },
+          data: {
+            status: reportedStatus === "cancelled" ? "CANCELLED" : "FAILED",
+            failureReason: `Transaction marked ${reportedStatus} by payment provider.`,
+            rawCallbackPayload: rawBody,
+          },
+        }).catch(() => null);
+
+        await prisma.auditLog.create({
+          data: {
+            action: "PAYMENT_PROVIDER_REPORTED_FAILURE",
+            entityType: "RegistrationPayment",
+            entityId: paymentReference,
+            metadata: JSON.stringify({
+              provider,
+              txRef,
+              status: reportedStatus,
+              amountPaid,
+            }),
+          },
+        }).catch(() => null);
+      }
+
+      return NextResponse.json(
+        {
+          success: false,
+          status: reportedStatus,
+          message: `Payment provider reported transaction as ${reportedStatus}.`,
+        },
+        { status: 200 }
+      );
+    }
+
+    // 5d. Android Payment Bridge Handling (Strict Enforcement of MOSA-Only Treasury Verification)
+    if (authResult.authMethod === "DEVICE_CREDENTIAL") {
+      // 1. Destination Verification: Must match MOSA's official Airtel SIM 0729974065
+      const cleanDest = (suppliedDestination || authResult.device?.simPhoneNumber || "0729974065")
+        .replace(/[\s\-\+\(\)]/g, "")
+        .replace(/^250/, "0");
+
+      if (cleanDest !== "0729974065" && cleanDest !== (authResult.device?.simPhoneNumber || "").replace(/^250/, "0")) {
+        // Discard unrelated personal SMS to other phone numbers without storing or logging it
+        return NextResponse.json(
+          {
+            success: false,
+            ignored: true,
+            error: "Personal or unrelated transaction: Destination does not match MOSA receiving wallet 0729974065.",
+          },
+          { status: 200 }
+        );
+      }
+
+      // 2. Check if sender is official Airtel Money notification
+      const senderHeader = req.headers.get("x-sms-sender") || payload.sender || "";
+      const isAirtelOfficial =
+        !senderHeader ||
+        senderHeader.toUpperCase().includes("AIRTEL") ||
+        senderHeader.includes("182");
+
+      if (senderHeader && !isAirtelOfficial) {
+        // Discard unrelated personal SMS
+        return NextResponse.json(
+          {
+            success: false,
+            ignored: true,
+            error: "Untrusted or personal SMS sender ignored by Android Bridge.",
+          },
+          { status: 200 }
+        );
+      }
+
+      // 3. Reconcile with pending/confirmed treasury settlement sweeps
+      const { reconcileSweepWithBridgeSms } = await import("@/lib/payments/paypack-settlement");
+      const sweepReconciliation = await reconcileSweepWithBridgeSms({
+        smsReference: String(providerTransactionRef || txRef),
+        amount: Number(amountPaid || 0),
+        sender: senderHeader || "AIRTEL_MONEY",
+        smsBody: rawSmsText || "",
+      });
+
+      if (sweepReconciliation.reconciled) {
+        return NextResponse.json({
+          success: true,
+          message: `Bridge SMS successfully reconciled MOSA treasury payout ${sweepReconciliation.matchedSweepRef} in Airtel wallet 0729974065.`,
+          matchedSweepRef: sweepReconciliation.matchedSweepRef,
+          status: sweepReconciliation.status,
+          isSettlementReconciliation: true,
+        });
+      }
+
+      // 4. Android Bridge supporting evidence:
+      // An Android Bridge notification alone without matching payment reference or recipient cannot confirm customer payment
+      if (!paymentReference && !txRef) {
+        return NextResponse.json(
+          {
+            success: false,
+            status: "REQUIRES_REVIEW",
+            error: "Notification does not match any active MOSA payout or registration payment. Marked for review.",
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     const verifiedBy = authResult.device
       ? `ANDROID_BRIDGE_${authResult.device.deviceId}`
       : payload.bridgeDeviceId

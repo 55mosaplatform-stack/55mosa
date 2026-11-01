@@ -102,8 +102,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 5. Reconcile status if pending
-    if (payment.status === "PENDING") {
+    // 5. Reconcile status if pending or waiting for customer PIN approval
+    if (payment.status === "PENDING" || payment.status === "WAITING_FOR_CUSTOMER_APPROVAL") {
       const { checkAndReconcilePaymentStatus } = await import("@/lib/payments/push-gateway");
       const reconciled = await checkAndReconcilePaymentStatus(payment.paymentReference);
       if (reconciled.payment) {

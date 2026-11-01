@@ -947,6 +947,73 @@ export async function checkAndReconcilePaymentStatus(paymentReference: string): 
 
   // If in active lifecycle waiting confirmation, reconcile against carrier if live keys are configured
   if (["PENDING", "WAITING_FOR_CUSTOMER_APPROVAL", "PROCESSING", "EVIDENCE_RECEIVED"].includes(payment.status)) {
+    // 1. Paypack Gateway Verification (Option A Primary Collection Gateway)
+    const isPaypackTx =
+      payment.rawCallbackPayload?.includes('"gateway":"PAYPACK"') ||
+      payment.providerTransactionRef?.startsWith("PAYPACK-") ||
+      payment.providerTransactionRef?.startsWith("PP-");
+
+    if (isPaypackTx && payment.providerTransactionRef) {
+      try {
+        const { queryPaypackTransaction } = await import("./paypack-adapter");
+        const paypackQuery = await queryPaypackTransaction(payment.providerTransactionRef);
+
+        if (paypackQuery.found) {
+          if (paypackQuery.status === "successful") {
+            const paidAmount = paypackQuery.amount ?? payment.feeAmount;
+            if (paidAmount < payment.feeAmount) {
+              const updated = await prisma.registrationPayment.update({
+                where: { id: payment.id },
+                data: {
+                  status: "FAILED",
+                  failureReason: `UNDERPAYMENT_DETECTED: Received ${paidAmount} RWF, expected ${payment.feeAmount} RWF.`,
+                },
+              });
+              return {
+                status: "FAILED",
+                payment: updated,
+                isConfirmed: false,
+                failureReason: updated.failureReason,
+              };
+            }
+
+            const confirmed = await confirmPaymentAndActivateBusiness({
+              paymentReference: payment.paymentReference,
+              providerTransactionRef: paypackQuery.ref || payment.providerTransactionRef,
+              provider: payment.provider,
+              amountPaid: paidAmount,
+              currency: "RWF",
+              verifiedBy: "PAYPACK_API_QUERY",
+              rawPayload: JSON.stringify(paypackQuery.rawResponse || { verifiedVia: "PAYPACK_API_QUERY" }),
+            });
+
+            return {
+              status: "CONFIRMED",
+              payment: confirmed.payment || payment,
+              receipt: confirmed.receipt,
+              isConfirmed: true,
+            };
+          } else if (paypackQuery.status === "failed") {
+            const updated = await prisma.registrationPayment.update({
+              where: { id: payment.id },
+              data: {
+                status: "FAILED",
+                failureReason: "Payment request was cancelled or failed on customer mobile wallet.",
+              },
+            });
+            return {
+              status: "FAILED",
+              payment: updated,
+              isConfirmed: false,
+              failureReason: updated.failureReason,
+            };
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[PAYPACK_RECONCILE_STATUS_WARN]: Failed to query Paypack status: ${err.message}`);
+      }
+    }
+
     const credStatus = getProviderCredentialStatus(payment.provider as SupportedPushProvider);
     const isSimulated =
       payment.rawCallbackPayload?.includes('"simulated":true') ||

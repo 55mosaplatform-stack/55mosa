@@ -74,8 +74,9 @@ export function UrubutoStyleCheckout({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  // Live countdown timer (120 seconds for phone PIN approval)
-  const [countdownSeconds, setCountdownSeconds] = useState(120);
+  // Live countdown timer (180 seconds for phone PIN approval)
+  const [countdownSeconds, setCountdownSeconds] = useState(180);
+  const [waitElapsedSeconds, setWaitElapsedSeconds] = useState(0);
 
   // Effective fee calculation
   const amountToPay = feeConfig?.isFree || feeConfig?.amount === 0 ? 0 : feeConfig?.amount ?? 5000;
@@ -110,18 +111,19 @@ export function UrubutoStyleCheckout({
     };
   }, [paymentPhase, activePayment]);
 
-  // Countdown countdown decrement
+  // Countdown countdown decrement and elapsed waiting tracker
   useEffect(() => {
     let timer: any;
     if (paymentPhase === "WAITING_APPROVAL" && countdownSeconds > 0) {
       timer = setInterval(() => {
+        setWaitElapsedSeconds((prev) => prev + 1);
         setCountdownSeconds((prev) => {
           if (prev <= 1) {
             setPaymentPhase("EXPIRED");
             setErrorMessage(
               lang === "rw"
-                ? "Igihe cyo kwemeza kuri telefoni cyarangiye (Iminota 2). Nyamuneka ongera ugerageze."
-                : "Approval prompt timed out after 2 minutes. Please retry payment request."
+                ? "Igihe cyo kwemeza kuri telefoni cyarangiye (Iminota 3). Nyamuneka ongera ugerageze cyangwa ukoreshe guhamagara code USSD."
+                : "Approval prompt timed out after 3 minutes. Please retry payment request or use 1-Tap USSD dial."
             );
             return 0;
           }
@@ -265,6 +267,9 @@ export function UrubutoStyleCheckout({
     }
 
     setIsSubmitting(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 14000);
+
     try {
       const effectiveProvider =
         providerToUse === "EKASH"
@@ -279,7 +284,9 @@ export function UrubutoStyleCheckout({
           provider: effectiveProvider,
           phoneNumber: carrierValidation.normalizedPhone,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       const data = await res.json();
 
@@ -290,6 +297,7 @@ export function UrubutoStyleCheckout({
         }
         setPromptDispatched(Boolean(data.promptDispatched));
         setCountdownSeconds(180); // 3 minute window for USSD / approval
+        setWaitElapsedSeconds(0);
         setPaymentPhase("WAITING_APPROVAL");
         setStatusMessage(
           data.promptDispatched
@@ -304,7 +312,16 @@ export function UrubutoStyleCheckout({
         setErrorMessage(data.error || "Failed to dispatch mobile money payment request.");
       }
     } catch (err: any) {
-      setErrorMessage(err.message || "Failed to request payment.");
+      clearTimeout(timeoutId);
+      if (err.name === "AbortError" || err.message?.includes("aborted")) {
+        setErrorMessage(
+          lang === "rw"
+            ? "Guhuza n'umuyoboro byatinze gato. Koresha bouton yo guhamagara USSD iri hasi cyangwa ongera ugerageze."
+            : "Network push dispatch timed out. Please use the 1-Tap USSD dial button or retry."
+        );
+      } else {
+        setErrorMessage(err.message || "Failed to request payment.");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -810,6 +827,23 @@ export function UrubutoStyleCheckout({
                 )}
               </p>
             </div>
+
+            {/* Adaptive Telecom Push Delay Advisory */}
+            {promptDispatched && waitElapsedSeconds >= 10 && (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs text-left flex items-start gap-3 max-w-lg mx-auto shadow-sm animate-in fade-in duration-300">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-bold text-amber-300">
+                    {lang === "rw" ? "Ubutumwa ntiburagera kuri telefoni yawe?" : "Prompt taking a moment to appear on your phone?"}
+                  </div>
+                  <div className="text-[11px] text-amber-200/90 leading-relaxed">
+                    {lang === "rw"
+                      ? "Imiyoboro ya MTN na Airtel rimwe na rimwe igira gutinda k'amasegonda make. Ntabwo ukeneye gutegereza: kanda kuri bouton yo guhamagara iri hasi (cyangwa ukoreshe code ya USSD) uhite ushyiramo PIN yawe ako kanya."
+                      : "Telecom network push notifications can experience a 10–20 second delay. You don't need to wait: tap the 1-Tap Dial button below or dial the USSD code on your mobile phone to enter your PIN immediately."}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* 1-Tap Direct Dial & USSD Guidance Card */}
             <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 text-left space-y-3.5 max-w-lg mx-auto shadow-inner">

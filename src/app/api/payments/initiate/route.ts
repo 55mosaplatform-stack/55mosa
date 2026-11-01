@@ -132,6 +132,24 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // 3. Phone-Level Rate Limit & Cooldown: Max 2 prompt requests per 60 seconds per phone number
+      // to strictly prevent payment-prompt abuse / harassment against other people's phones
+      const phoneRateLimit = await checkPaymentRateLimit({
+        key: `initiate:phone:${carrierCheck.normalizedPhone}`,
+        limit: 2,
+        windowSeconds: 60,
+      });
+
+      if (!phoneRateLimit.isAllowed) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "A payment approval prompt was recently dispatched to this phone number. Please check your handset or wait 60 seconds before requesting another prompt.",
+          },
+          { status: 429, headers: getRateLimitHeaders(phoneRateLimit) }
+        );
+      }
+
       const ref = result.paymentReference || result.payment?.paymentReference;
       const amt = result.feeAmount ?? result.payment?.feeAmount ?? 5000;
       const curr = result.currency || result.payment?.currency || "RWF";
