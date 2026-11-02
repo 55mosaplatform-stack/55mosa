@@ -287,7 +287,7 @@ async function runCybersecurityVerification() {
     // TEST 8 — Security Headers & Content Security Policy (CSP)
     // -------------------------------------------------------------------------
     console.log("--- TEST 8: Content Security Policy & Security Headers ---");
-    const headersConfig = await nextConfig.headers();
+    const headersConfig = typeof nextConfig.headers === "function" ? await nextConfig.headers() : [];
     const globalHeaders = headersConfig.find((h: any) => h.source === "/(.*)")?.headers || [];
 
     const hasNosniff = globalHeaders.some((h: any) => h.key === "X-Content-Type-Options" && h.value === "nosniff");
