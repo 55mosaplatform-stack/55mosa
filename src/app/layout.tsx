@@ -10,6 +10,7 @@ import { OfflineBanner } from "@/components/common/OfflineBanner";
 import { LocationSelectorModal } from "@/components/layout/LocationSelectorModal";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://55mosa.com"),
   title: "55 MOSA — Global Community Commerce & Ground Discovery Network",
   description:
     "Independent business discovery platform pioneering micro-enterprise visibility, authentic price transparency, and street-level landmark navigation worldwide.",

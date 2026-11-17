@@ -3,10 +3,13 @@ import dns from "dns";
 import { prisma } from "@/lib/prisma";
 import { Role } from "@prisma/client";
 
-export const DEFAULT_CANONICAL_URL = "https://mosa-one.vercel.app";
+export const DEFAULT_CANONICAL_URL = "https://55mosa.com";
 
 // Explicitly approved domains. Broad "*.vercel.app" is strictly prohibited to prevent subdomain hijacking.
 export const DEFAULT_APPROVED_DOMAINS = [
+  "55mosa.com",
+  "www.55mosa.com",
+  "*.55mosa.com",
   "mosa-one.vercel.app",
   "mosa.rw",
   "*.mosa.rw",
