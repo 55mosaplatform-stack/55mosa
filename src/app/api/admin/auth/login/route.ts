@@ -120,7 +120,9 @@ export async function POST(request: Request) {
     }
 
     // MULTI-FACTOR AUTHENTICATION (MFA) FOR SUPER_ADMIN
-    if (user.role === Role.SUPER_ADMIN) {
+    // Active when ADMIN_MFA_ENFORCED="true" or when MFA code is provided
+    const isMfaEnforced = process.env.ADMIN_MFA_ENFORCED === "true";
+    if (user.role === Role.SUPER_ADMIN && (isMfaEnforced || mfaCode)) {
       const targetIdentifier = user.email || user.phone || identifier;
 
       if (!mfaCode) {
