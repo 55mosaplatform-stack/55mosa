@@ -27,9 +27,9 @@ async function run() {
     });
 
     const loginData = await loginRes.json();
-    const setCookie = loginRes.headers.get("set-cookie") || "";
-    // extract token
-    const tokenMatch = setCookie.match(/mosa_session=([^;]+)/);
+    const rawCookies = loginRes.headers.getSetCookie ? loginRes.headers.getSetCookie() : [];
+    const sessionStr = rawCookies.find(c => c.startsWith("mosa_session=")) || "";
+    const tokenMatch = sessionStr.match(/mosa_session=([^;]+)/);
     const adminToken = tokenMatch ? tokenMatch[1] : "";
     const adminCookie = `mosa_session=${adminToken}`;
 
