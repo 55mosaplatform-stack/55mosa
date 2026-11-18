@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { PLATFORM_VERSION } from "@/lib/version";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,8 @@ export async function GET() {
     return NextResponse.json({
       status: "ok",
       database: "connected",
+      version: PLATFORM_VERSION.version,
+      release: PLATFORM_VERSION.releaseName,
       userCount,
       env: envDiagnostic,
       timestamp: new Date().toISOString(),
@@ -38,6 +41,7 @@ export async function GET() {
     return NextResponse.json(
       {
         status: "error",
+        version: PLATFORM_VERSION.version,
         errorName: error?.name || "UnknownError",
         errorMessage: error?.message || String(error),
         errorCode: error?.code || null,
