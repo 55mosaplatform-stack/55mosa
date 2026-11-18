@@ -9,6 +9,7 @@ import { Business } from "@/types";
 import { DemandTicker } from "@/components/discovery/DemandTicker";
 import { CategoryPills } from "@/components/discovery/CategoryPills";
 import { DiscoveryFeed } from "@/components/discovery/DiscoveryFeed";
+import { CommunityPulseSection } from "@/components/home/CommunityPulseSection";
 import { 
   Search, 
   MapPin, 
@@ -373,6 +374,9 @@ export default function HomePage() {
             </div>
 
           </div>
+
+          {/* Real-time Community Announcements & Enterprise Pulse */}
+          <CommunityPulseSection />
 
           {/* Interactive CTA Banner for Business Registration */}
           <div className="mt-16 bg-slate-950 rounded-3xl p-8 sm:p-12 text-white border border-slate-800 shadow-[0_20px_60px_rgba(0,0,0,0.25)] flex flex-col md:flex-row items-center justify-between gap-8 relative overflow-hidden">

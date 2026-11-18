@@ -12,6 +12,7 @@ import {
   Compass, 
   Search, 
   TrendingUp, 
+  Megaphone,
   Award, 
   Briefcase, 
   Store, 
@@ -44,6 +45,7 @@ export function Navbar() {
   const navLinks = [
     { href: "/", label: t.nav.home, icon: Compass },
     { href: "/explore", label: t.nav.explore, icon: Search },
+    { href: "/community", label: lang === "rw" ? "Amatangazo n'Amakuru" : "Community & News", icon: Megaphone },
     { href: "/demand", label: t.nav.whatPeopleNeed, icon: TrendingUp },
   ];
 

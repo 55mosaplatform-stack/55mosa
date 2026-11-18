@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneNumber } from "@/lib/sms/normalize";
 import { createSessionToken, setSessionCookie, hashPassword } from "@/lib/auth";
@@ -201,7 +202,7 @@ export async function POST(request: Request) {
           longitude: hasCoordinates ? Number(longitude) : 30.046,
           verificationStatus: "UNVERIFIED",
           status: "PENDING",
-          dataStatus: "VERIFIED",
+          dataStatus: "RESEARCHED",
           source: "SELF_REGISTERED",
           provinceId: resolvedProvinceId,
           districtId: resolvedDistrictId,
@@ -316,6 +317,13 @@ export async function POST(request: Request) {
     });
 
     await setSessionCookie(token);
+
+    // Revalidate Command Center queues so new submission appears immediately
+    try {
+      revalidatePath("/admin");
+    } catch {
+      // Non-blocking
+    }
 
     // 10. Truthful Welcome SMS Notification
     try {

@@ -10,6 +10,19 @@ import { permanentlyDeleteBusiness } from "@/lib/business-deletion";
 
 export const dynamic = "force-dynamic";
 
+function revalidatePlatformPaths(businessId?: string) {
+  try {
+    revalidatePath("/");
+    revalidatePath("/explore");
+    revalidatePath("/admin");
+    if (businessId) {
+      revalidatePath(`/business/${businessId}`);
+    }
+  } catch (err) {
+    console.warn("[Admin API] Cache revalidation warning:", err);
+  }
+}
+
 // GET /api/admin - Fetch administrative overview, metrics, and queues
 export async function GET() {
   const auth = await requireAuth([Role.SUPER_ADMIN, Role.COMMUNITY_ADMIN, Role.MODERATOR]);
@@ -395,9 +408,7 @@ export async function PATCH(request: Request) {
         }).catch(() => {});
       }
 
-      revalidatePath(`/business/${businessId}`);
-      revalidatePath("/explore");
-      revalidatePath("/admin");
+      revalidatePlatformPaths(businessId);
 
       return NextResponse.json({
         success: true,
@@ -468,8 +479,7 @@ export async function PATCH(request: Request) {
         }).catch(() => {});
       }
 
-      revalidatePath(`/business/${businessId}`);
-      revalidatePath("/admin");
+      revalidatePlatformPaths(businessId);
 
       return NextResponse.json({
         success: true,
@@ -523,9 +533,7 @@ export async function PATCH(request: Request) {
         return b;
       });
 
-      revalidatePath(`/business/${businessId}`);
-      revalidatePath("/explore");
-      revalidatePath("/admin");
+      revalidatePlatformPaths(businessId);
 
       return NextResponse.json({
         success: true,
@@ -561,6 +569,8 @@ export async function PATCH(request: Request) {
           },
         }),
       ]);
+
+      revalidatePlatformPaths(businessId);
 
       return NextResponse.json({ success: true, newStatus });
     }
@@ -606,6 +616,8 @@ export async function PATCH(request: Request) {
         }),
       ]);
 
+      revalidatePlatformPaths(businessId);
+
       return NextResponse.json({ success: true, status: bizStatus });
     }
 
@@ -637,6 +649,8 @@ export async function PATCH(request: Request) {
 
         return b;
       });
+
+      revalidatePlatformPaths(businessId);
 
       return NextResponse.json({ success: true, dataStatus: updated.dataStatus });
     }
@@ -693,6 +707,8 @@ export async function PATCH(request: Request) {
         return b;
       });
 
+      revalidatePlatformPaths(businessId);
+
       return NextResponse.json({ success: true, business: updated });
     }
 
@@ -714,6 +730,8 @@ export async function PATCH(request: Request) {
 
         return b;
       });
+
+      revalidatePlatformPaths(businessId);
 
       return NextResponse.json({ success: true, status: "ARCHIVED" });
     }
@@ -737,6 +755,8 @@ export async function PATCH(request: Request) {
         return b;
       });
 
+      revalidatePlatformPaths(businessId);
+
       return NextResponse.json({ success: true, status: "SUSPENDED" });
     }
 
@@ -758,6 +778,8 @@ export async function PATCH(request: Request) {
 
         return b;
       });
+
+      revalidatePlatformPaths(businessId);
 
       return NextResponse.json({ success: true, status: "ACTIVE" });
     }
@@ -826,8 +848,7 @@ export async function PATCH(request: Request) {
         }).catch(() => {});
       }
 
-      revalidatePath(`/business/${claim.businessId}`);
-      revalidatePath("/explore");
+      revalidatePlatformPaths(claim.businessId);
 
       return NextResponse.json({ success: true, claim });
     }
@@ -859,6 +880,8 @@ export async function PATCH(request: Request) {
       if (!result.success) {
         return NextResponse.json({ error: result.error }, { status: result.status });
       }
+
+      revalidatePlatformPaths(businessId);
 
       return NextResponse.json({
         success: true,
