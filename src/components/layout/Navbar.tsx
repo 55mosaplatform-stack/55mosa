@@ -73,17 +73,14 @@ export function Navbar() {
           {/* Logo & Brand Identity */}
           <div className="flex items-center gap-3 sm:gap-4">
             <Link href="/" className="flex items-center gap-2.5 group">
-              {platformSettings.logoUrl ? (
-                <img
-                  src={platformSettings.logoUrl}
-                  alt={platformSettings.platformName}
-                  className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-contain bg-white p-0.5 border border-slate-200/80 shadow-xs group-hover:scale-105 transition-transform"
-                />
-              ) : (
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-emerald-800 via-emerald-700 to-amber-500 flex items-center justify-center text-white font-extrabold text-sm sm:text-base shadow-xs group-hover:scale-105 transition-transform">
-                  55
-                </div>
-              )}
+              <img
+                src={platformSettings.logoUrl || "/mosa-logo.png"}
+                alt={platformSettings.platformName || "55 MOSA"}
+                className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-contain bg-white p-0.5 border border-slate-200/80 shadow-xs group-hover:scale-105 transition-transform"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = "/mosa-logo.jpg";
+                }}
+              />
               <div className="flex flex-col">
                 <span className="font-extrabold text-lg sm:text-xl tracking-tight text-slate-950 leading-none">
                   {lang === "rw" ? (platformSettings.platformNameRw || platformSettings.platformName) : platformSettings.platformName}

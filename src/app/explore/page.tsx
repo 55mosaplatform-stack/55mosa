@@ -68,12 +68,25 @@ export default function ExplorePage() {
         const res = await fetch(`/api/businesses?${params.toString()}`);
         if (res.ok) {
           const data = await res.json();
-          if (data.businesses) {
+          if (data.businesses && data.businesses.length > 0) {
             setBusinesses(data.businesses);
             if (!selectedPin || !data.businesses.find((b: Business) => b.id === selectedPin.id)) {
               setSelectedPin(data.businesses[0] || null);
             }
             return;
+          } else if (currentSector && currentSector !== "all") {
+            // Resilient Fallback: If filtered sector has no businesses yet, fetch all registered businesses
+            const fallbackRes = await fetch("/api/businesses");
+            if (fallbackRes.ok) {
+              const fallbackData = await fallbackRes.json();
+              if (fallbackData.businesses && fallbackData.businesses.length > 0) {
+                setBusinesses(fallbackData.businesses);
+                if (!selectedPin || !fallbackData.businesses.find((b: Business) => b.id === selectedPin.id)) {
+                  setSelectedPin(fallbackData.businesses[0] || null);
+                }
+                return;
+              }
+            }
           }
         }
       } catch (err) {

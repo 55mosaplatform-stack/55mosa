@@ -35,17 +35,14 @@ export function Footer() {
           {/* Brand & Editorial Mission Statement (3 cols on desktop) */}
           <div className="md:col-span-3 space-y-4 pr-0 lg:pr-10">
             <div className="flex items-center gap-3">
-              {platformSettings.logoUrl ? (
-                <img
-                  src={platformSettings.logoUrl}
-                  alt={platformName}
-                  className="w-9 h-9 rounded-xl object-contain bg-white/10 p-1 border border-white/10"
-                />
-              ) : (
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center text-white font-bold text-xs shadow-sm">
-                  55
-                </div>
-              )}
+              <img
+                src={platformSettings.logoUrl || "/mosa-logo.png"}
+                alt={platformName || "55 MOSA"}
+                className="w-9 h-9 rounded-xl object-contain bg-white p-1 border border-white/10"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = "/mosa-logo.jpg";
+                }}
+              />
               <div className="flex flex-col">
                 <span className="font-extrabold text-xl tracking-tight text-white">{platformName}</span>
                 <span className="text-[10px] text-emerald-400 font-semibold uppercase tracking-widest">

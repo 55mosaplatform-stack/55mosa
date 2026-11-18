@@ -1,4 +1,4 @@
-import { PrismaClient, Role, VerificationStatus, DocumentType } from "@prisma/client";
+import { PrismaClient, Role, VerificationStatus, DocumentType, DataStatus } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -127,6 +127,7 @@ export async function seedDatabase() {
       addressNote: "Opposite Green Tea Corner, 2nd door on the right",
       latitude: -1.9774,
       longitude: 30.0482,
+      dataStatus: DataStatus.VERIFIED,
       verificationStatus: VerificationStatus.HIGH_CONFIDENCE,
       isOpenNow: true,
       priceRange: "LOW",
@@ -163,6 +164,7 @@ export async function seedDatabase() {
       addressNote: "Next to Cosmos Pharmacie, green gate",
       latitude: -1.981,
       longitude: 30.046,
+      dataStatus: DataStatus.VERIFIED,
       verificationStatus: VerificationStatus.AGENT_VERIFIED,
       isOpenNow: true,
       priceRange: "MODERATE",
@@ -198,6 +200,7 @@ export async function seedDatabase() {
       addressNote: "Beside Cosmos Commercial Center, Shop #4",
       latitude: -1.9815,
       longitude: 30.0465,
+      dataStatus: DataStatus.VERIFIED,
       verificationStatus: VerificationStatus.COMMUNITY_VERIFIED,
       isOpenNow: true,
       priceRange: "MODERATE",
@@ -233,6 +236,7 @@ export async function seedDatabase() {
       addressNote: "Kivugiza Junction near Mumena Primary Gate",
       latitude: -1.992,
       longitude: 30.048,
+      dataStatus: DataStatus.VERIFIED,
       verificationStatus: VerificationStatus.HIGH_CONFIDENCE,
       isOpenNow: true,
       priceRange: "LOW",

@@ -45,9 +45,19 @@ export default function HomePage() {
         const res = await fetch(`/api/businesses?${params.toString()}`);
         if (res.ok) {
           const data = await res.json();
-          if (data.businesses) {
+          if (data.businesses && data.businesses.length > 0) {
             setBusinesses(data.businesses);
             return;
+          } else if (currentSector && currentSector !== "all") {
+            // Resilient Fallback: If filtered sector has no businesses yet, fetch all registered businesses
+            const fallbackRes = await fetch("/api/businesses");
+            if (fallbackRes.ok) {
+              const fallbackData = await fallbackRes.json();
+              if (fallbackData.businesses && fallbackData.businesses.length > 0) {
+                setBusinesses(fallbackData.businesses);
+                return;
+              }
+            }
           }
         }
       } catch (err) {
