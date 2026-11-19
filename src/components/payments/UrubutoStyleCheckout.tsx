@@ -19,7 +19,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n";
-import { detectCarrierAndValidate, normalizeRwandaPhone } from "@/lib/payments/push-gateway";
+import { detectCarrierAndValidate, normalizeRwandaPhone } from "@/lib/payments/phone-utils";
 
 export interface UrubutoStyleCheckoutProps {
   businessId: string;
