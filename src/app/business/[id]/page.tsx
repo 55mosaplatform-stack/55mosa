@@ -47,8 +47,10 @@ import {
   Building2,
   Mail,
   Maximize2,
+  Store,
 } from "lucide-react";
 import { LocationCard } from "@/components/discovery/LocationCard";
+import { BusinessCard } from "@/components/discovery/BusinessCard";
 import { getGoogleMapsDirectionsUrl } from "@/lib/location-quality";
 import { getBusinessOperatingModel } from "@/lib/taxonomy";
 import { isVideoMedia, isLegacyBagPlaceholder } from "@/lib/media-upload";
@@ -86,6 +88,7 @@ export default function BusinessDetailPage({
   const [applicantMessage, setApplicantMessage] = useState("");
   const [oppSubmitting, setOppSubmitting] = useState(false);
   const [oppSubmitted, setOppSubmitted] = useState(false);
+  const [relatedBusinesses, setRelatedBusinesses] = useState<Business[]>([]);
 
   useEffect(() => {
     async function loadBusiness() {
@@ -96,6 +99,25 @@ export default function BusinessDetailPage({
           if (data.business) {
             setBusiness(data.business);
             setReviews(data.business.reviews || []);
+
+            // Intelligent Discovery: Fetch related businesses in the same category/sector
+            try {
+              const relParams = new URLSearchParams();
+              if (data.business.category) relParams.set("category", data.business.category);
+              const relRes = await fetch(`/api/businesses?${relParams.toString()}`);
+              if (relRes.ok) {
+                const relData = await relRes.json();
+                if (relData.businesses && Array.isArray(relData.businesses)) {
+                  setRelatedBusinesses(
+                    relData.businesses
+                      .filter((b: Business) => b.id !== data.business.id)
+                      .slice(0, 3)
+                  );
+                }
+              }
+            } catch (relErr) {
+              console.warn("Failed to fetch related businesses:", relErr);
+            }
             return;
           }
         }
@@ -293,7 +315,7 @@ export default function BusinessDetailPage({
     email: business.email || undefined,
     image: hasValidCover ? business.coverImage : (business.logo || undefined),
     logo: business.logo || undefined,
-    url: `https://mosa-one.vercel.app/business/${business.id}`,
+    url: `https://55mosa.com/business/${business.id}`,
     currenciesAccepted: "RWF",
     paymentAccepted: "Cash, Mobile Money (MTN MoMo, Airtel Money)",
     address: {
@@ -1404,6 +1426,34 @@ export default function BusinessDetailPage({
         </div>
 
       </div>
+
+      {/* Related Neighborhood Enterprises */}
+      {relatedBusinesses.length > 0 && (
+        <div className="mt-12 pt-8 border-t border-slate-200">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <Store className="w-5 h-5 text-emerald-600" />
+                {lang === "rw" ? "Ubundi Bucuruzi Bukwegereye" : "Related Neighborhood Enterprises"}
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {lang === "rw" ? "Ubucuruzi bwerekeranye muri aka karere" : "Verified businesses in similar category or location"}
+              </p>
+            </div>
+            <Link
+              href="/explore"
+              className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+            >
+              {lang === "rw" ? "Reba Byose" : "Explore All"} <ChevronRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {relatedBusinesses.map((rb) => (
+              <BusinessCard key={rb.id} business={rb} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Video Player Modal */}
       {activeVideo && (

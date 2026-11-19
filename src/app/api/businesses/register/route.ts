@@ -327,13 +327,14 @@ export async function POST(request: Request) {
 
     // 10. Truthful Welcome SMS Notification
     try {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://55mosa.com";
       await sendBusinessSMS({
         businessId: business.id,
         recipientPhone: cleanPhone,
         templateId: "WELCOME_OWNER",
         variables: {
           businessName: business.name,
-          dashboardUrl: "https://mosa-one.vercel.app/owner/dashboard",
+          dashboardUrl: `${appUrl}/owner/dashboard`,
         },
         language: "rw",
       });
