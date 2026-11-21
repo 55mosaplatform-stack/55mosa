@@ -19,9 +19,12 @@ import {
 
 interface DiscoveryFeedProps {
   businesses: Business[];
+  isLoading?: boolean;
+  hasError?: boolean;
+  onRetry?: () => void;
 }
 
-export function DiscoveryFeed({ businesses }: DiscoveryFeedProps) {
+export function DiscoveryFeed({ businesses, isLoading = false, hasError = false, onRetry }: DiscoveryFeedProps) {
   const { lang, t } = useLanguage();
   const [activeTab, setActiveTab] = useState<"all" | "gems" | "offers" | "digitized" | "open">("all");
 
@@ -179,7 +182,62 @@ export function DiscoveryFeed({ businesses }: DiscoveryFeedProps) {
       )}
 
       {/* Editorial Composition of Business Cards */}
-      {displayedBusinesses.length === 0 ? (
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+          {[1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className={`bg-white rounded-3xl border border-slate-200/80 overflow-hidden shadow-xs animate-pulse flex flex-col ${
+                i === 1 ? "md:flex-row md:col-span-2 lg:col-span-2 xl:col-span-2" : ""
+              }`}
+            >
+              <div
+                className={`bg-slate-200 ${
+                  i === 1
+                    ? "aspect-[16/11] md:aspect-auto md:w-7/12 min-h-[260px] md:min-h-[340px]"
+                    : "aspect-[16/11] w-full"
+                }`}
+              />
+              <div className="p-6 sm:p-7 flex-1 flex flex-col justify-between space-y-4">
+                <div className="space-y-3">
+                  <div className="h-4 bg-slate-200 rounded w-1/3" />
+                  <div className="h-6 bg-slate-200 rounded w-3/4" />
+                  <div className="h-3 bg-slate-100 rounded w-full" />
+                  <div className="h-3 bg-slate-100 rounded w-5/6" />
+                </div>
+                <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                  <div className="h-4 bg-slate-200 rounded w-24" />
+                  <div className="h-8 bg-slate-200 rounded-full w-20" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : hasError ? (
+        <div className="bg-white rounded-3xl border border-rose-200/80 p-10 text-center shadow-xs space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+            <HelpCircle className="w-6 h-6" />
+          </div>
+          <h3 className="font-bold text-slate-950 text-base">
+            {lang === "rw" ? "Ntibyakunze kugaragaza ubucuruzi" : "Unable to load verified businesses"}
+          </h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+            {lang === "rw"
+              ? "Habaye ikibazo mu guhuza n'ububikoshingiro. Kanda kuri buto yo munsi kugira ngo wongere ugerageze."
+              : "A temporary connection issue occurred while connecting to the database. Please try again."}
+          </p>
+          {onRetry && (
+            <div className="pt-2">
+              <button
+                onClick={onRetry}
+                className="px-5 py-2.5 bg-slate-950 hover:bg-slate-800 text-white text-xs font-semibold rounded-full transition-all shadow-sm cursor-pointer"
+              >
+                {lang === "rw" ? "Ongera ugerageze" : "Retry Connection"}
+              </button>
+            </div>
+          )}
+        </div>
+      ) : displayedBusinesses.length === 0 ? (
         <div className="bg-white rounded-3xl border border-slate-200/80 p-12 text-center shadow-xs">
           <HelpCircle className="w-12 h-12 text-slate-300 mx-auto mb-3" />
           <h3 className="font-bold text-slate-950 text-base">

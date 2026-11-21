@@ -31,43 +31,55 @@ export default function HomePage() {
   const { lang, t } = useLanguage();
   const { currentSector, currentCell, currentLocalArea, displayLabel, openSelector, setSector, setFullLocation, resetLocation } = useLocation();
   const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  useEffect(() => {
-    async function loadBusinesses() {
-      try {
-        const params = new URLSearchParams();
-        if (selectedCategory !== "all") params.set("category", selectedCategory);
-        if (currentSector && currentSector !== "all") params.set("sector", currentSector);
-        if (currentCell && currentCell !== "all") params.set("cell", currentCell);
-        if (currentLocalArea && currentLocalArea !== "all") params.set("community", currentLocalArea);
-        
-        const res = await fetch(`/api/businesses?${params.toString()}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.businesses && data.businesses.length > 0) {
-            setBusinesses(data.businesses);
-            return;
-          } else if (currentSector && currentSector !== "all") {
-            // Resilient Fallback: If filtered sector has no businesses yet, fetch all registered businesses
-            const fallbackRes = await fetch("/api/businesses");
-            if (fallbackRes.ok) {
-              const fallbackData = await fallbackRes.json();
-              if (fallbackData.businesses && fallbackData.businesses.length > 0) {
-                setBusinesses(fallbackData.businesses);
-                return;
-              }
+  const loadBusinesses = React.useCallback(async () => {
+    setIsLoading(true);
+    setFetchError(false);
+    try {
+      const params = new URLSearchParams();
+      if (selectedCategory !== "all") params.set("category", selectedCategory);
+      if (currentSector && currentSector !== "all") params.set("sector", currentSector);
+      if (currentCell && currentCell !== "all") params.set("cell", currentCell);
+      if (currentLocalArea && currentLocalArea !== "all") params.set("community", currentLocalArea);
+      
+      const res = await fetch(`/api/businesses?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.businesses && data.businesses.length > 0) {
+          setBusinesses(data.businesses);
+          setIsLoading(false);
+          return;
+        } else if (currentSector && currentSector !== "all") {
+          // Resilient Fallback: If filtered sector has no businesses yet, fetch all registered businesses
+          const fallbackRes = await fetch("/api/businesses");
+          if (fallbackRes.ok) {
+            const fallbackData = await fallbackRes.json();
+            if (fallbackData.businesses && fallbackData.businesses.length > 0) {
+              setBusinesses(fallbackData.businesses);
+              setIsLoading(false);
+              return;
             }
           }
         }
-      } catch (err) {
-        console.error("Failed to load businesses:", err);
+        setBusinesses([]);
+      } else {
+        setFetchError(true);
       }
-      setBusinesses([]);
+    } catch (err) {
+      console.error("Failed to load businesses:", err);
+      setFetchError(true);
+    } finally {
+      setIsLoading(false);
     }
-    loadBusinesses();
   }, [selectedCategory, currentSector, currentCell, currentLocalArea]);
+
+  useEffect(() => {
+    loadBusinesses();
+  }, [loadBusinesses]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -271,7 +283,12 @@ export default function HomePage() {
         </div>
 
         {/* The Discovery Feed */}
-        <DiscoveryFeed businesses={businesses} />
+        <DiscoveryFeed
+          businesses={businesses}
+          isLoading={isLoading}
+          hasError={fetchError}
+          onRetry={loadBusinesses}
+        />
 
         {/* Section: Self-Serve Business Registration Guide & Value Proposition */}
         <section className="mt-24 pt-16 border-t border-slate-200/80">
