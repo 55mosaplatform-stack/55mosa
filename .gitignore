@@ -43,3 +43,6 @@ android/build/
 android/app/build/
 *.apk
 *.aab
+
+# Production Database Backups
+backups/

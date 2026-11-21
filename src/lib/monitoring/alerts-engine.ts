@@ -366,6 +366,32 @@ export async function evaluateOperationalAlerts(): Promise<OperationalAlertRecor
       urgency: "Review required within 4 hours",
       resolutionCriteria: "Brute force attempts drop below threshold and all offending IPs are neutralized.",
     },
+    {
+      code: "PAYMENT_RECEIPTS_BACKLOG_ELEVATED",
+      condition: telemetry.payments.unconfirmedReceipts >= 5,
+      title: "Unconfirmed Registration Payment Receipts Awaiting Verification",
+      component: "PAYMENTS",
+      severity: telemetry.payments.unconfirmedReceipts >= 10 ? "HIGH" : "MEDIUM",
+      message: `${telemetry.payments.unconfirmedReceipts} registration or renewal fee payment submission(s) are pending confirmation.`,
+      consequences: "Paid entrepreneurs may experience delays in activation and public catalog visibility, causing administrative friction.",
+      recommendedAction: "Verify mobile money / bank transfer reference IDs in Registration & Revenue payments queue.",
+      directive: "1. Open Command Center Registration & Revenue tab.\n2. Match pending payment reference IDs against Airtel / MTN / Bank statements.\n3. Approve verified transactions to automatically activate merchant profiles.",
+      urgency: telemetry.payments.unconfirmedReceipts >= 10 ? "Action required within 4 hours" : "Review required within 12 hours",
+      resolutionCriteria: "Pending payment queue processed down to under 5 unconfirmed receipts.",
+    },
+    {
+      code: "BUSINESS_CLAIMS_QUEUE_ELEVATED",
+      condition: telemetry.businesses.pendingClaims >= 5,
+      title: "Pending Business Profile Claims Awaiting Administrative Audit",
+      component: "BUSINESSES",
+      severity: "MEDIUM",
+      message: `${telemetry.businesses.pendingClaims} ownership claim request(s) on listed enterprises are awaiting verification.`,
+      consequences: "Legitimate shop proprietors cannot manage catalog prices and announcements, risking stalled merchant engagement.",
+      recommendedAction: "Audit ownership claim documents (National ID, commercial registration, phone verification).",
+      directive: "1. Open Content Moderation / Claims review queue.\n2. Verify claimant identity against enterprise phone number or RDB registration.\n3. Approve legitimate claims to transfer administrative access to business owner.",
+      urgency: "Review required within 24 hours",
+      resolutionCriteria: "Pending claims queue processed down to under 5 requests.",
+    },
   ];
 
   // Process rules against active alerts in database
