@@ -119,6 +119,9 @@ export async function collectSystemTelemetry(): Promise<SystemTelemetry> {
   try {
     await prisma.$queryRawUnsafe("SELECT 1");
     latencyMs = Date.now() - startTime;
+    if (latencyMs > 1500) {
+      dbStatus = "DEGRADED";
+    }
   } catch (err) {
     dbStatus = "DISCONNECTED";
     latencyMs = Date.now() - startTime;
@@ -140,10 +143,10 @@ export async function collectSystemTelemetry(): Promise<SystemTelemetry> {
   const quotaMb = 500; // Supabase Free Tier limit: 500 MB
   const percentQuotaUsed = Math.round((sizeMb / quotaMb) * 1000) / 10;
 
-  // 3. Business & Pilot Integrity
+  // 3. Business & Pilot Integrity (Graceful fallback if database is disconnected)
   const allBusinesses = await prisma.business.findMany({
     select: { id: true, name: true, status: true, verificationStatus: true },
-  });
+  }).catch(() => []);
   const totalBiz = allBusinesses.length;
   const activeBiz = allBusinesses.filter((b) => b.status === "ACTIVE").length;
   const verifiedBiz = allBusinesses.filter((b) =>
@@ -156,7 +159,7 @@ export async function collectSystemTelemetry(): Promise<SystemTelemetry> {
   const missingPilots = PILOT_NAMES.filter(
     (name) => !allBusinesses.some((b) => b.name === name && b.status === "ACTIVE")
   );
-  const pilotsIntact = missingPilots.length === 0;
+  const pilotsIntact = totalBiz > 0 && missingPilots.length === 0;
 
   // 4. Pending Claims
   const pendingClaims = await prisma.businessClaim.count({
@@ -272,6 +275,19 @@ export async function evaluateOperationalAlerts(): Promise<OperationalAlertRecor
   }
 
   const rules: RuleSpec[] = [
+    {
+      code: "DATABASE_CONNECTIVITY_DEGRADED",
+      condition: telemetry.database.status !== "CONNECTED" || telemetry.database.latencyMs > 1500,
+      title: "PostgreSQL Database Connectivity Degraded or Disconnected",
+      component: "DATABASE",
+      severity: telemetry.database.status === "DISCONNECTED" ? "CRITICAL" : "HIGH",
+      message: `Database status is ${telemetry.database.status} with query latency of ${telemetry.database.latencyMs}ms.`,
+      consequences: "Enterprise discovery, user authentication, fee payments, and profile updates will fail or time out.",
+      recommendedAction: "Verify Supabase status, inspect transaction pooler on port 6543, and review connection limits.",
+      directive: "1. Check status.supabase.com for EU-West-1 incidents.\n2. Confirm connection string pooler params (pgbouncer=true&connection_limit=1).\n3. Test fallback connectivity via DIRECT_URL on port 5432.\n4. Restart stagnant connections in Supabase Settings.",
+      urgency: telemetry.database.status === "DISCONNECTED" ? "Immediate action required (P0 - under 15 minutes)" : "Action required within 1 hour",
+      resolutionCriteria: "Database connection status must return to CONNECTED with latency under 500ms.",
+    },
     {
       code: "PILOT_ENTERPRISES_DISRUPTION",
       condition: !telemetry.businesses.pilotsIntact,
