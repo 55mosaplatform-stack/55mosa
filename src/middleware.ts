@@ -128,11 +128,15 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except static assets:
-     * - _next/static, _next/image, favicon.ico, sitemap.xml, robots.txt
-     * - static image and asset extensions
-     */
-    "/((?!_next/static|_next/image|favicon.ico|sitemap\\.xml|robots\\.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff2?|ico|css|js)$).*)",
+    "/admin/:path*",
+    "/api/:path*",
+    "/agent/:path*",
+    "/owner/:path*",
+    "/explore",
+    "/search",
+    "/business/:path*",
+    "/demand",
+    "/community/:path*",
+    "/register-business",
   ],
 };
