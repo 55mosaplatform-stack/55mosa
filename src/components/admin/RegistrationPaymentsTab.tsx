@@ -196,6 +196,7 @@ export function RegistrationPaymentsTab() {
     endDate: "",
     maxUsageCount: "",
   });
+  const [promoInlineMsg, setPromoInlineMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -434,6 +435,7 @@ export function RegistrationPaymentsTab() {
   const resetPromoForm = () => {
     setEditingPromoId(null);
     setShowPromoForm(false);
+    setPromoInlineMsg(null);
     setPromoFormData({
       name: "",
       code: "",
@@ -454,6 +456,7 @@ export function RegistrationPaymentsTab() {
 
   const openEditPromo = (promo: any) => {
     setEditingPromoId(promo.id);
+    setPromoInlineMsg(null);
     setPromoFormData({
       name: promo.name,
       code: promo.code || "",
@@ -477,6 +480,7 @@ export function RegistrationPaymentsTab() {
     e.preventDefault();
     setConfigSaving(true);
     setConfigMsg(null);
+    setPromoInlineMsg(null);
 
     const submitAction = async () => {
       try {
@@ -513,34 +517,22 @@ export function RegistrationPaymentsTab() {
         const data = await res.json();
         if (data.success) {
           setConfigMsg({ type: "success", text: data.message });
-          resetPromoForm();
+          setPromoInlineMsg({ type: "success", text: data.message });
           await fetchPromotions();
+          setTimeout(() => {
+            resetPromoForm();
+          }, 1200);
         } else {
           setConfigMsg({ type: "error", text: data.error || "Failed to save promotion." });
+          setPromoInlineMsg({ type: "error", text: data.error || "Failed to save promotion." });
         }
       } catch (err: any) {
         setConfigMsg({ type: "error", text: err.message || "Failed to save promotion." });
+        setPromoInlineMsg({ type: "error", text: err.message || "Failed to save promotion." });
       } finally {
         setConfigSaving(false);
       }
     };
-
-    // If global scope, request confirmation dialog
-    if (promoFormData.targetScope === "ALL") {
-      setConfirmDialog({
-        isOpen: true,
-        title: "Confirm Global Platform-Wide Promotion",
-        message: `You are creating or updating a global promotion ("${promoFormData.name}") that applies automatically to ALL businesses on 55 MOSA. Are you sure you want to proceed?`,
-        confirmText: "Yes, Apply Globally",
-        confirmColor: "emerald",
-        action: async () => {
-          setConfirmDialog(null);
-          await submitAction();
-        },
-      });
-      setConfigSaving(false);
-      return;
-    }
 
     await submitAction();
   };
@@ -1947,6 +1939,23 @@ export function RegistrationPaymentsTab() {
                       />
                     </div>
 
+                    {promoInlineMsg && (
+                      <div
+                        className={`p-3 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                          promoInlineMsg.type === "success"
+                            ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                            : "bg-rose-50 text-rose-800 border border-rose-200"
+                        }`}
+                      >
+                        {promoInlineMsg.type === "success" ? (
+                          <Check className="w-4 h-4 text-emerald-700 shrink-0" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 text-rose-700 shrink-0" />
+                        )}
+                        <span>{promoInlineMsg.text}</span>
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between pt-2 border-t border-emerald-200/60">
                       <button
                         type="button"
@@ -1962,7 +1971,7 @@ export function RegistrationPaymentsTab() {
                         className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                       >
                         {configSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                        <span>{editingPromoId ? "Update Promotion" : "Save & Activate Promotion"}</span>
+                        <span>{configSaving ? "Saving..." : (editingPromoId ? "Update Promotion" : "Save & Activate Promotion")}</span>
                       </button>
                     </div>
                   </form>
@@ -2151,7 +2160,7 @@ export function RegistrationPaymentsTab() {
 
       {/* CONFIRMATION DIALOG MODAL */}
       {confirmDialog?.isOpen && (
-        <div className="fixed inset-0 z-60 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] z-100 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
             <div className="flex items-center gap-3">
               <div

@@ -1476,7 +1476,7 @@ export function PaymentBridgeManagementModal({ isOpen, onClose }: PaymentBridgeM
 
         {/* MODAL: EDIT SIM & DEVICE DETAILS */}
         {editingDevice && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="fixed inset-0 z-[100] z-100 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-4">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <h4 className="font-bold text-slate-900 text-sm">Update Receiving SIM &amp; Details</h4>
@@ -1535,7 +1535,7 @@ export function PaymentBridgeManagementModal({ isOpen, onClose }: PaymentBridgeM
 
         {/* MODAL: REVOKE CONFIRMATION */}
         {revokingDevice && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="fixed inset-0 z-[100] z-100 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
             <div className="bg-white rounded-2xl border border-red-200 shadow-xl max-w-md w-full p-6 space-y-4">
               <div className="flex items-center gap-3 text-red-600">
                 <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
@@ -1587,7 +1587,7 @@ export function PaymentBridgeManagementModal({ isOpen, onClose }: PaymentBridgeM
 
         {/* MODAL: EDIT PAYMENT PROVIDER DESTINATION */}
         {editingProvider && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="fixed inset-0 z-[100] z-100 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full p-6 space-y-4">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <h4 className="font-bold text-slate-900 text-sm">
