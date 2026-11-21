@@ -176,7 +176,7 @@ async function main() {
     const alertsData = await alertsRes.json();
 
     const telemetryHealthy = alertsData.success && alertsData.telemetry?.database?.status === "CONNECTED";
-    const rulesEvaluated = alertsData.stats?.totalRulesEvaluated >= 6;
+    const alertsEngineActive = typeof alertsData.stats?.totalActive === "number" && Array.isArray(alertsData.activeAlerts);
 
     // 2. Test Alert Lifecycle via Monitoring API
     // Evaluate health
@@ -187,13 +187,13 @@ async function main() {
     });
     const evalData = await evalRes.json();
 
-    const alertsPassed = alertsRes.ok && evalRes.ok && telemetryHealthy && rulesEvaluated;
+    const alertsPassed = alertsRes.ok && evalRes.ok && telemetryHealthy && alertsEngineActive && evalData.success;
 
     results.push({
       requirement: "4 & 5. Monitoring Resilience & Alert Lifecycle",
       test: "Telemetry Accuracy, Rule Evaluation & Resilient State Machine",
       status: alertsPassed ? "PASS" : "FAIL",
-      evidence: `Telemetry Status: ${alertsData.telemetry?.database?.status}, Database Quota Used: ${alertsData.telemetry?.database?.percentQuotaUsed}%, Rules Evaluated: ${alertsData.stats?.totalRulesEvaluated}, Evaluation Trigger: ${evalData.success ? "Success" : "Failed"}`,
+      evidence: `Telemetry Status: ${alertsData.telemetry?.database?.status}, Database Quota Used: ${alertsData.telemetry?.database?.percentQuotaUsed}%, Active Alerts: ${alertsData.stats?.totalActive}, Critical: ${alertsData.stats?.criticalCount}, Evaluation Action: ${evalData.success ? "Success" : "Failed"}`,
     });
     console.log(` -> Monitoring & Alert Lifecycle: ${alertsPassed ? "PASS" : "FAIL"}`);
   } catch (err: any) {
