@@ -1,13 +1,78 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
-import { inspectRequestThreats } from "@/lib/security/threat-inspector";
 
 const JWT_SECRET_KEY = new TextEncoder().encode(
   process.env.JWT_SECRET || "mosa-community-network-secure-jwt-secret-key-rwanda-2026"
 );
 
 const SESSION_COOKIE_NAME = "mosa_session";
+
+// Standalone Edge-compatible regex threat scanner (Zero external file dependencies)
+type EdgeThreatType = "SQLI_ATTEMPT" | "XSS_ATTEMPT" | "SUSPICIOUS_PAYLOAD" | "PATH_TRAVERSAL";
+
+function inspectRequestThreats(rawString: string): { isMalicious: boolean; threatType: EdgeThreatType | null } {
+  if (!rawString || typeof rawString !== "string") {
+    return { isMalicious: false, threatType: null };
+  }
+
+  let decoded = rawString;
+  try {
+    decoded = decodeURIComponent(rawString);
+  } catch {
+    // Keep raw if invalid URI sequence
+  }
+  const lower = decoded.toLowerCase();
+
+  // 1. SQL Injection Signatures
+  const sqliPatterns = [
+    /\bunion\s+(all\s+)?select\b/,
+    /'\s+or\s+['"\d\w]+\s*=\s*['"\d\w]+/,
+    /--\s*$/,
+    /;\s*(drop|alter|truncate|delete)\s+table\b/,
+    /\bexec(\s+|\()+xp_cmdshell\b/,
+    /\bselect\s+.*\bfrom\s+information_schema\b/,
+    /\bwaitfor\s+delay\s+'\d+:\d+:\d+'/,
+  ];
+
+  for (const pat of sqliPatterns) {
+    if (pat.test(lower)) {
+      return { isMalicious: true, threatType: "SQLI_ATTEMPT" };
+    }
+  }
+
+  // 2. Cross-Site Scripting (XSS) Signatures
+  const xssPatterns = [
+    /<script[\s\S]*?>[\s\S]*?<\/script>/i,
+    /javascript:\s*[^\s]+/i,
+    /onerror\s*=\s*['"][^'"]+['"]/i,
+    /onload\s*=\s*['"][^'"]+['"]/i,
+    /<svg\s+onload/i,
+    /<iframe[\s\S]*?>/i,
+  ];
+
+  for (const pat of xssPatterns) {
+    if (pat.test(lower)) {
+      return { isMalicious: true, threatType: "XSS_ATTEMPT" };
+    }
+  }
+
+  // 3. Path Traversal Signatures
+  const traversalPatterns = [
+    /(\.\.\/|\.\.\\){2,}/,
+    /%2e%2e%2f/i,
+    /\/etc\/passwd/,
+    /c:\\windows\\system32/i,
+  ];
+
+  for (const pat of traversalPatterns) {
+    if (pat.test(lower)) {
+      return { isMalicious: true, threatType: "PATH_TRAVERSAL" };
+    }
+  }
+
+  return { isMalicious: false, threatType: null };
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
