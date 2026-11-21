@@ -1,30 +1,18 @@
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma } from "../src/lib/prisma";
 
 async function main() {
   const businesses = await prisma.business.findMany({
     select: {
       id: true,
       name: true,
+      status: true,
       dataStatus: true,
       verificationStatus: true,
-      locationVerificationStatus: true,
-      category: true,
-      sector: true,
-      cell: true,
-      isOpenNow: true,
-      logo: true,
-      coverImage: true,
+      phone: true,
     },
   });
-
-  console.log("=== BUSINESSES IN SUPABASE ===");
+  console.log("Businesses in Supabase:", businesses.length);
   console.log(JSON.stringify(businesses, null, 2));
 }
 
-main()
-  .catch(console.error)
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+main().finally(() => prisma.$disconnect());
