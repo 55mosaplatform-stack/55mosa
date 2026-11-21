@@ -60,18 +60,6 @@ function buildLocationOrConditions(locationTerm: string) {
 }
 
 export async function GET(request: Request) {
-  // Digital Security Guard Defense-in-Depth Threat Inspection
-  const rawUrl = request.url || "";
-  if (rawUrl.includes("?")) {
-    const threat = inspectRequestThreats(decodeURIComponent(rawUrl));
-    if (threat.isMalicious) {
-      return NextResponse.json(
-        { error: "Forbidden: Security violation pattern intercepted by 55 MOSA Shield.", threatType: threat.threatType },
-        { status: 403 }
-      );
-    }
-  }
-
   const { searchParams } = new URL(request.url);
   const category = searchParams.get("category") || undefined;
   const mainCategory = searchParams.get("mainCategory") || undefined;
@@ -82,6 +70,17 @@ export async function GET(request: Request) {
   const cell = searchParams.get("cell") || undefined;
   const dataStatus = searchParams.get("dataStatus") || undefined;
   const search = searchParams.get("search") || undefined;
+
+  // Digital Security Guard Defense-in-Depth Threat Inspection
+  if (search) {
+    const threat = inspectRequestThreats(search);
+    if (threat.isMalicious) {
+      return NextResponse.json(
+        { error: "Forbidden: Security violation pattern intercepted by 55 MOSA Shield.", threatType: threat.threatType },
+        { status: 403 }
+      );
+    }
+  }
   const openNowOnly = searchParams.get("openNowOnly") === "true";
   const verification = searchParams.get("verification") || undefined;
 
