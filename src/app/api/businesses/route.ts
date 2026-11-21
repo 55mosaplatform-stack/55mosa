@@ -7,6 +7,7 @@ import { formatBusinessRecord } from "@/lib/format-business";
 import { serializePublicBusiness } from "@/lib/public-serializer";
 import { parseSearchQuery } from "@/lib/search-nlp";
 import { checkNearDuplicates } from "@/lib/location-quality";
+import { inspectRequestThreats } from "@/lib/security/threat-inspector";
 
 function buildLocationOrConditions(locationTerm: string) {
   const clean = locationTerm.trim();
@@ -59,6 +60,18 @@ function buildLocationOrConditions(locationTerm: string) {
 }
 
 export async function GET(request: Request) {
+  // Digital Security Guard Defense-in-Depth Threat Inspection
+  const rawUrl = request.url || "";
+  if (rawUrl.includes("?")) {
+    const threat = inspectRequestThreats(decodeURIComponent(rawUrl));
+    if (threat.isMalicious) {
+      return NextResponse.json(
+        { error: "Forbidden: Security violation pattern intercepted by 55 MOSA Shield.", threatType: threat.threatType },
+        { status: 403 }
+      );
+    }
+  }
+
   const { searchParams } = new URL(request.url);
   const category = searchParams.get("category") || undefined;
   const mainCategory = searchParams.get("mainCategory") || undefined;

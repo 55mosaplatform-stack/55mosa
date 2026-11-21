@@ -75,20 +75,22 @@ function inspectRequestThreats(rawString: string): { isMalicious: boolean; threa
 }
 
 export async function middleware(request: NextRequest) {
-  const { pathname, search } = request.nextUrl;
+  const { pathname } = request.nextUrl;
+  const rawUrl = request.url || "";
+  const queryIndex = rawUrl.indexOf("?");
+  const queryStr = queryIndex !== -1 ? rawUrl.slice(queryIndex) : (request.nextUrl.search || "");
 
   // 0. Digital Security Guard: Fast Edge Threat Scanner (Zero DB dependency)
-  if (search) {
-    const threat = inspectRequestThreats(search);
-    if (threat.isMalicious) {
-      return NextResponse.json(
-        {
-          error: "Forbidden: Security violation pattern intercepted by 55 MOSA Shield.",
-          threatType: threat.threatType,
-        },
-        { status: 403 }
-      );
-    }
+  const targetToInspect = `${pathname} ${queryStr}`;
+  const threat = inspectRequestThreats(targetToInspect);
+  if (threat.isMalicious) {
+    return NextResponse.json(
+      {
+        error: "Forbidden: Security violation pattern intercepted by 55 MOSA Shield.",
+        threatType: threat.threatType,
+      },
+      { status: 403 }
+    );
   }
 
   // Public admin auth and access routes that bypass middleware protection
@@ -198,9 +200,12 @@ export const config = {
     "/agent/:path*",
     "/owner/:path*",
     "/explore",
+    "/explore/:path*",
     "/search",
+    "/search/:path*",
     "/business/:path*",
     "/demand",
+    "/demand/:path*",
     "/community/:path*",
     "/register-business",
   ],
