@@ -55,10 +55,12 @@ import {
   Square,
   BellRing,
   Sliders,
-  CreditCard
+  CreditCard,
+  Radio
 } from "lucide-react";
 import { PlatformIdentityTab } from "@/components/admin/PlatformIdentityTab";
 import { RegistrationPaymentsTab } from "@/components/admin/RegistrationPaymentsTab";
+import { SecurityAndOperationsRadarTab } from "@/components/admin/SecurityAndOperationsRadarTab";
 import { SmartLocationForm, SmartLocationFormData } from "@/components/location/SmartLocationForm";
 import { calculateLocationCompleteness } from "@/lib/location-quality";
 import { RWANDA_HIERARCHY } from "@/lib/rwanda-geo";
@@ -126,7 +128,7 @@ export default function AdminPanelPage() {
   const { user, switchDemoRole } = useAuth();
 
   const [activeTab, setActiveTab] = useState<
-    "overview" | "verification" | "businesses" | "payments" | "moderation" | "users" | "ecosystem" | "settings" | "intelligence" | "pending_applications" | "claims" | "sms" | "history" | "captures" | "reports" | "demands" | "audit" | "announcements" | "identity"
+    "overview" | "radar" | "verification" | "businesses" | "payments" | "moderation" | "users" | "ecosystem" | "settings" | "intelligence" | "pending_applications" | "claims" | "sms" | "history" | "captures" | "reports" | "demands" | "audit" | "announcements" | "identity"
   >("overview");
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [claims, setClaims] = useState<any[]>([]);
@@ -1386,6 +1388,7 @@ export default function AdminPanelPage() {
       <div className="flex items-center gap-2 border-b border-slate-200 pb-3 mb-6 overflow-x-auto no-scrollbar">
         {[
           { id: "overview", label: "Overview", count: null, icon: Activity },
+          { id: "radar", label: "Operations Radar & Shield", count: null, icon: Radio, highlight: true },
           { 
             id: "verification", 
             label: "Business Verification", 
@@ -1515,6 +1518,13 @@ export default function AdminPanelPage() {
               <p className="text-xs text-slate-400 mt-0.5">Rapidly jump to essential platform governance centers.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setActiveTab("radar")}
+                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Radio className="w-4 h-4" />
+                <span>Operations Radar &amp; Shield</span>
+              </button>
               <button
                 onClick={() => setActiveTab("verification")}
                 className="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -3559,6 +3569,9 @@ export default function AdminPanelPage() {
           </div>
         </div>
       )}
+
+      {/* Operations Radar & Autonomous Shield Tab */}
+      {activeTab === "radar" && <SecurityAndOperationsRadarTab />}
 
       {/* Registration Payments & Revenue Tab */}
       {activeTab === "payments" && <RegistrationPaymentsTab />}

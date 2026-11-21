@@ -9,10 +9,19 @@ import {
   getRateLimitClientIp,
   getRateLimitHeaders,
 } from "@/lib/payments/rate-limiter";
+import { isIpBlocked, recordFailedAuthAttempt } from "@/lib/security/guards-engine";
 
 export async function POST(request: Request) {
   try {
     const clientIp = getRateLimitClientIp(request);
+
+    // 0. Digital Security Guard: Check if IP is currently quarantined
+    if (await isIpBlocked(clientIp)) {
+      return NextResponse.json(
+        { error: "Access Denied: Your IP address has been temporarily quarantined by the MOSA Digital Security Guard due to detected policy violations." },
+        { status: 403 }
+      );
+    }
 
     // IP-Level Rate Limit: Max 10 login requests per 60 seconds
     const ipRateLimit = await checkPaymentRateLimit({
@@ -73,6 +82,12 @@ export async function POST(request: Request) {
           metadata: { clientIp, reason: "USER_NOT_FOUND" },
         }).catch(() => null);
 
+        await recordFailedAuthAttempt({
+          ip: clientIp,
+          identifier: rawIdentifier,
+          userAgent: request.headers.get("user-agent") || undefined,
+        }).catch(() => null);
+
         return NextResponse.json({ error: "Invalid username, email, or password" }, { status: 401 });
       }
 
@@ -95,6 +110,12 @@ export async function POST(request: Request) {
           entityType: "USER",
           entityId: user.id,
           metadata: { clientIp, reason: "INVALID_PASSWORD" },
+        }).catch(() => null);
+
+        await recordFailedAuthAttempt({
+          ip: clientIp,
+          identifier: rawIdentifier,
+          userAgent: request.headers.get("user-agent") || undefined,
         }).catch(() => null);
 
         return NextResponse.json({ error: "Invalid username, email, or password" }, { status: 401 });

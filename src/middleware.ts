@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
+import { inspectRequestThreats } from "@/lib/security/threat-inspector";
 
 const JWT_SECRET_KEY = new TextEncoder().encode(
   process.env.JWT_SECRET || "mosa-community-network-secure-jwt-secret-key-rwanda-2026"
@@ -9,7 +10,21 @@ const JWT_SECRET_KEY = new TextEncoder().encode(
 const SESSION_COOKIE_NAME = "mosa_session";
 
 export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const { pathname, search } = request.nextUrl;
+
+  // 0. Digital Security Guard: Fast Edge Threat Scanner (Zero DB dependency)
+  if (search) {
+    const threat = inspectRequestThreats(search);
+    if (threat.isMalicious) {
+      return NextResponse.json(
+        {
+          error: "Forbidden: Security violation pattern intercepted by 55 MOSA Shield.",
+          threatType: threat.threatType,
+        },
+        { status: 403 }
+      );
+    }
+  }
 
   // Public admin auth and access routes that bypass middleware protection
   const isPublicAdminRoute =

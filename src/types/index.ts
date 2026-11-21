@@ -528,4 +528,98 @@ export interface CustomerInquiryRecord {
   createdAt: string;
 }
 
+// -------------------------------------------------------------
+// Proactive Monitoring & Early Warning System Types
+// -------------------------------------------------------------
+export type AlertSeverity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+export type AlertStatus = "ACTIVE" | "ACKNOWLEDGED" | "INVESTIGATING" | "RESOLVED";
+export type AlertComponent = 
+  | "DATABASE" 
+  | "INFRASTRUCTURE" 
+  | "PAYMENTS" 
+  | "BUSINESSES" 
+  | "SECURITY" 
+  | "STORAGE" 
+  | "MONITORING";
+
+export interface OperationalAlertRecord {
+  id: string;
+  code: string;
+  title: string;
+  component: AlertComponent;
+  severity: AlertSeverity;
+  status: AlertStatus;
+  message: string;
+  consequences: string;
+  recommendedAction: string;
+  directive: string;
+  urgency: string;
+  resolutionCriteria: string;
+  metricsSnapshot?: Record<string, any> | null;
+  acknowledgedAt?: string | null;
+  acknowledgedBy?: string | null;
+  investigatedAt?: string | null;
+  investigatedBy?: string | null;
+  resolvedAt?: string | null;
+  resolvedBy?: string | null;
+  resolutionNotes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// -------------------------------------------------------------
+// Autonomous Digital Security Guard Types
+// -------------------------------------------------------------
+export type SecurityIncidentType = 
+  | "BRUTE_FORCE" 
+  | "SQLI_ATTEMPT" 
+  | "XSS_ATTEMPT" 
+  | "UNAUTHORIZED_ADMIN_ACCESS" 
+  | "FRAUDULENT_PAYMENT" 
+  | "SUSPICIOUS_PAYLOAD" 
+  | "MALICIOUS_UPLOAD" 
+  | "PRIVILEGE_ESCALATION";
+
+export type SecurityIncidentStatus = 
+  | "DETECTED" 
+  | "CONTAINED" 
+  | "BLOCKED" 
+  | "INVESTIGATING" 
+  | "RESOLVED" 
+  | "FALSE_POSITIVE";
+
+export type SecurityDefenseAction = 
+  | "NONE" 
+  | "IP_TEMPORARY_BLOCK" 
+  | "RATE_LIMITED" 
+  | "SESSION_REVOKED" 
+  | "UPLOAD_QUARANTINED" 
+  | "TRANSACTION_FLAGGED";
+
+export interface SecurityIncidentRecord {
+  id: string;
+  incidentType: SecurityIncidentType;
+  severity: AlertSeverity;
+  status: SecurityIncidentStatus;
+  clientIp?: string | null;
+  actorId?: string | null;
+  targetRoute?: string | null;
+  evidence: Record<string, any>;
+  threatScore: number;
+  automatedDefenseApplied: SecurityDefenseAction;
+  defenseDetails?: string | null;
+  correctiveDirective: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SecurityBlockedIpRecord {
+  ip: string;
+  reason: string;
+  incidentId?: string | null;
+  blockedUntil: string;
+  createdAt: string;
+}
+
+
 

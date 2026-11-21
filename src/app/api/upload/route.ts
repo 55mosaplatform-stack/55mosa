@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { Role } from "@prisma/client";
 import { persistMediaAsset } from "@/lib/storage";
+import { validateUploadSecurity } from "@/lib/security/guards-engine";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,19 @@ export async function POST(request: Request) {
       const filename = file.name || "upload.bin";
       const mimeType = file.type || "application/octet-stream";
 
+      const uploadCheck = validateUploadSecurity({
+        filename,
+        mimeType,
+        sizeBytes: buffer.length,
+      });
+
+      if (!uploadCheck.isAllowed) {
+        return NextResponse.json(
+          { error: uploadCheck.rejectionReason || "File rejected by security guard." },
+          { status: 400 }
+        );
+      }
+
       const result = await persistMediaAsset(buffer, filename, mimeType);
       return NextResponse.json({
         success: true,
@@ -63,6 +77,19 @@ export async function POST(request: Request) {
       } else {
         return NextResponse.json(
           { error: "Invalid JSON upload. Provide 'file' via formData or 'dataUrl' / 'base64' via JSON." },
+          { status: 400 }
+        );
+      }
+
+      const uploadCheck = validateUploadSecurity({
+        filename,
+        mimeType: resolvedMime,
+        sizeBytes: buffer.length,
+      });
+
+      if (!uploadCheck.isAllowed) {
+        return NextResponse.json(
+          { error: uploadCheck.rejectionReason || "File rejected by security guard." },
           { status: 400 }
         );
       }
