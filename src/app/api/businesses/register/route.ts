@@ -113,9 +113,10 @@ export async function POST(request: Request) {
     }
 
     const hasCoordinates = typeof latitude === "number" && typeof longitude === "number" && !isNaN(latitude) && !isNaN(longitude);
+    const coordinatesConfirmed = Boolean(body.hasConfirmedCoordinates);
     const hasGps = hasCoordinates && typeof locationAccuracy === "number";
-    const locSource: LocationSource = hasGps ? LocationSource.GPS_DEVICE : LocationSource.OWNER_REPORTED;
-    const locVerification: LocationVerificationStatus = hasGps ? LocationVerificationStatus.AGENT_CAPTURED : LocationVerificationStatus.UNVERIFIED;
+    const locSource: LocationSource = hasGps ? LocationSource.GPS_DEVICE : (coordinatesConfirmed ? LocationSource.MAP_SELECTION : LocationSource.OWNER_REPORTED);
+    const locVerification: LocationVerificationStatus = (hasGps || coordinatesConfirmed) ? LocationVerificationStatus.AGENT_CAPTURED : LocationVerificationStatus.UNVERIFIED;
     const accuracy = hasGps ? Number(locationAccuracy) : null;
     const resolvedProvinceId = body.provinceId || null;
     let resolvedDistrictId = body.districtId || null;

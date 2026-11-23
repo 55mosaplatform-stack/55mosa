@@ -275,6 +275,7 @@ export default function RegisterBusinessPage() {
     longitude: 30.0868,
     locationSource: "OWNER_REPORTED",
     locationVerificationStatus: "UNVERIFIED",
+    hasConfirmedCoordinates: false,
   });
 
   // Step 3: Initial Catalog Items (Products & Services with Media & Mandatory Caption)
@@ -542,13 +543,19 @@ export default function RegisterBusinessPage() {
     if (!locationData.nearestLandmark || !locationData.nearestLandmark.trim()) {
       errors.nearestLandmark = (t.registration as any)?.errors?.landmarkRequired || "Nearest recognizable landmark is required";
     }
+    if (!locationData.hasConfirmedCoordinates) {
+      errors.coordinates = lang === "rw"
+        ? "Nyamuneka kanda ku ikarita cyangwa wandike aho mukorera kugira ngo coordinates zizwe neza."
+        : "Please confirm your business pin position on the map or describe your location. Country hub viewing position is not a confirmed business location.";
+    }
 
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
       setErrorMsg(
-        lang === "rw"
+        errors.coordinates ||
+        (lang === "rw"
           ? "Nyamuneka hitamo aho mukorera hose kandi wandike ikimenyetso kigaragara cyo ku butaka (Landmark)."
-          : `Please specify your ${cfg.fieldLabels.level2.toLowerCase()}, ${cfg.fieldLabels.level3.toLowerCase()}, ${cfg.fieldLabels.level4.toLowerCase()} and nearest walking landmark.`
+          : `Please specify your ${cfg.fieldLabels.level2.toLowerCase()}, ${cfg.fieldLabels.level3.toLowerCase()}, ${cfg.fieldLabels.level4.toLowerCase()} and confirm your pin position.`)
       );
       return false;
     }
@@ -645,6 +652,12 @@ export default function RegisterBusinessPage() {
         id: "landmark",
         label: "Nearest Recognizable Landmark",
         valid: Boolean(locationData.nearestLandmark.trim()),
+        step: 2,
+      },
+      {
+        id: "pin_confirmed",
+        label: "Map Coordinates Confirmed (Not Viewport Hub)",
+        valid: Boolean(locationData.hasConfirmedCoordinates),
         step: 2,
       },
       {
@@ -778,6 +791,7 @@ export default function RegisterBusinessPage() {
         locationDescription: locationData.locationDescription,
         latitude: locationData.latitude,
         longitude: locationData.longitude,
+        hasConfirmedCoordinates: Boolean(locationData.hasConfirmedCoordinates),
         locationAccuracy: locationData.locationAccuracy,
         products: validProducts,
       };

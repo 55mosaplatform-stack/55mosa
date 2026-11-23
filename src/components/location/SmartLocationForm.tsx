@@ -54,6 +54,7 @@ export interface SmartLocationFormData {
   locationSource: LocationSource;
   locationAccuracy?: number;
   locationVerificationStatus: LocationVerificationStatus;
+  hasConfirmedCoordinates: boolean;
 }
 
 interface SmartLocationFormProps {
@@ -101,13 +102,19 @@ export function SmartLocationForm({
   const [nearbyPlace, setNearbyPlace] = useState(initialValues?.nearbyPlace || "");
   const [locationDescription, setLocationDescription] = useState(initialValues?.locationDescription || "");
 
-  // Machine coordinates & verification metadata (saved automatically in background)
+  // Machine coordinates & verification metadata (viewing position strictly separated from confirmed coordinates)
+  const hasInitialCoords = typeof initialValues?.latitude === "number" && typeof initialValues?.longitude === "number";
+  const [hasConfirmedCoordinates, setHasConfirmedCoordinates] = useState<boolean>(hasInitialCoords);
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({
+    lat: initialValues?.latitude ?? initialConfig.defaultCenter.lat,
+    lng: initialValues?.longitude ?? initialConfig.defaultCenter.lng,
+  });
   const [latitude, setLatitude] = useState<number>(initialValues?.latitude ?? initialConfig.defaultCenter.lat);
   const [longitude, setLongitude] = useState<number>(initialValues?.longitude ?? initialConfig.defaultCenter.lng);
-  const [locationSource, setLocationSource] = useState<LocationSource>(initialValues?.locationSource || "ADMIN_MANUAL");
+  const [locationSource, setLocationSource] = useState<LocationSource>(initialValues?.locationSource || (hasInitialCoords ? "OWNER_REPORTED" : "ADMIN_MANUAL"));
   const [locationAccuracy, setLocationAccuracy] = useState<number | undefined>(initialValues?.locationAccuracy);
   const [locationVerificationStatus, setLocationVerificationStatus] = useState<LocationVerificationStatus>(
-    initialValues?.locationVerificationStatus || "UNVERIFIED"
+    initialValues?.locationVerificationStatus || (hasInitialCoords ? "AGENT_CAPTURED" : "UNVERIFIED")
   );
 
   // Natural Description Geocoding & Interpretation states
@@ -295,11 +302,14 @@ export function SmartLocationForm({
     setCountry(selectedCountryName);
     const cfg = getCountryConfig(selectedCountryName);
 
-    // Update coordinates & center map pin to newly selected country hub
+    // Update map camera viewing position to target country hub — coordinates are UNCONFIRMED until user specifies location
+    setMapCenter(cfg.defaultCenter);
+    setHasConfirmedCoordinates(false);
     setLatitude(cfg.defaultCenter.lat);
     setLongitude(cfg.defaultCenter.lng);
     setEstimatedLocation(null);
     setPinManuallyAdjusted(false);
+    setLocationVerificationStatus("UNVERIFIED");
 
     if (selectedCountryName === "Rwanda") {
       const p = geoTree.find((item) => item.name.includes("Kigali")) || geoTree[0];
@@ -428,8 +438,12 @@ export function SmartLocationForm({
         const { lat, lng, confidence, matchedPlace, source, hierarchy } = data.result;
 
         // Move map pin and update coordinates automatically in the background
-        setLatitude(Number(lat.toFixed(6)));
-        setLongitude(Number(lng.toFixed(6)));
+        const cleanLat = Number(lat.toFixed(6));
+        const cleanLng = Number(lng.toFixed(6));
+        setLatitude(cleanLat);
+        setLongitude(cleanLng);
+        setMapCenter({ lat: cleanLat, lng: cleanLng });
+        setHasConfirmedCoordinates(true);
         setLocationSource("MAP_SELECTION");
         setPinManuallyAdjusted(false);
 
@@ -472,8 +486,12 @@ export function SmartLocationForm({
 
   // Interactive Map Pin Adjustment (drag or click)
   const handleMapPinAdjust = (coords: { lat: number; lng: number }) => {
-    setLatitude(Number(coords.lat.toFixed(6)));
-    setLongitude(Number(coords.lng.toFixed(6)));
+    const cleanLat = Number(coords.lat.toFixed(6));
+    const cleanLng = Number(coords.lng.toFixed(6));
+    setLatitude(cleanLat);
+    setLongitude(cleanLng);
+    setMapCenter({ lat: cleanLat, lng: cleanLng });
+    setHasConfirmedCoordinates(true);
     setLocationSource("AGENT_PIN");
     setPinManuallyAdjusted(true);
     if (locationVerificationStatus === "UNVERIFIED") {
@@ -494,8 +512,12 @@ export function SmartLocationForm({
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude: lat, longitude: lng, accuracy } = position.coords;
-        setLatitude(Number(lat.toFixed(6)));
-        setLongitude(Number(lng.toFixed(6)));
+        const cleanLat = Number(lat.toFixed(6));
+        const cleanLng = Number(lng.toFixed(6));
+        setLatitude(cleanLat);
+        setLongitude(cleanLng);
+        setMapCenter({ lat: cleanLat, lng: cleanLng });
+        setHasConfirmedCoordinates(true);
         setLocationAccuracy(Math.round(accuracy));
         setLocationSource("GPS_DEVICE");
         setLocationVerificationStatus("AGENT_CAPTURED");
@@ -563,11 +585,12 @@ export function SmartLocationForm({
       locationSource,
       locationAccuracy,
       locationVerificationStatus,
+      hasConfirmedCoordinates,
     });
   }, [
     country, provinceId, province, districtId, district, sectorId, sector, cellId, cell,
     village, localAreaId, nearestLandmark, streetName, nearbyPlace, locationDescription, searchQuery,
-    latitude, longitude, locationSource, locationAccuracy, locationVerificationStatus
+    latitude, longitude, locationSource, locationAccuracy, locationVerificationStatus, hasConfirmedCoordinates
   ]);
 
   return (
@@ -739,7 +762,7 @@ export function SmartLocationForm({
         {/* Interactive Map with Draggable Pin */}
         <div>
           <MosaMap
-            center={{ lat: latitude, lng: longitude }}
+            center={mapCenter}
             draggablePin={true}
             draggableCoords={{ lat: latitude, lng: longitude }}
             onCoordinateChange={handleMapPinAdjust}
@@ -749,26 +772,36 @@ export function SmartLocationForm({
           />
         </div>
 
-        {/* Background Auto-Save Status Bar */}
+        {/* Background Auto-Save / Confirmation Status Bar */}
         <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-slate-800/80 rounded-xl border border-slate-700/60 text-[11px] text-slate-300">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+            <span className={`w-2 h-2 rounded-full ${hasConfirmedCoordinates ? "bg-emerald-400 animate-pulse" : "bg-amber-400"} shrink-0`}></span>
             <span>
-              {pinManuallyAdjusted ? "Pin manually refined" : "Pin placed from description"} —{" "}
-              <strong className="text-emerald-300">Coordinates saved automatically</strong>
+              {hasConfirmedCoordinates ? (
+                <>
+                  {pinManuallyAdjusted ? "Pin manually placed by you" : "Pin placed from description"} —{" "}
+                  <strong className="text-emerald-300">Coordinates confirmed</strong>
+                </>
+              ) : (
+                <span className="text-amber-300 font-semibold">
+                  Viewing position only ({currentCountryConfig.name}) — Click map or describe address to confirm coordinates.
+                </span>
+              )}
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <a
-              href={`https://www.google.com/maps/@?api=1&map_action=map&center=${latitude},${longitude}&zoom=17`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-emerald-400 hover:text-emerald-300 underline text-[10px] flex items-center gap-1 font-semibold"
-              title="Preview location on Google Maps"
-            >
-              <ExternalLink className="w-3 h-3 text-emerald-400" />
-              <span>Google Maps View</span>
-            </a>
+            {hasConfirmedCoordinates && (
+              <a
+                href={`https://www.google.com/maps/@?api=1&map_action=map&center=${latitude},${longitude}&zoom=17`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-emerald-400 hover:text-emerald-300 underline text-[10px] flex items-center gap-1 font-semibold"
+                title="Preview location on Google Maps"
+              >
+                <ExternalLink className="w-3 h-3 text-emerald-400" />
+                <span>Google Maps View</span>
+              </a>
+            )}
             <button
               type="button"
               onClick={() => setShowTechCoords(!showTechCoords)}
