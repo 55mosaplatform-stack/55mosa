@@ -7979,9 +7979,16 @@ export default function OwnerDashboardPage() {
                   {business.categoryDisplay || business.category}
                 </p>
                 <p className="text-xs text-slate-500 font-medium">
-                  {business.nearestLandmark
-                    ? `${business.nearestLandmark} • ${business.location?.cell || business.cell || "Kigali"}, ${business.location?.sector || business.sector || "Rwanda"}`
-                    : `${business.location?.cell || business.cell || "Kigali"}, ${business.location?.sector || business.sector || "Rwanda"}`}
+                  {(() => {
+                    const isRw = !business.location?.country || business.location?.country.toLowerCase() === "rwanda";
+                    const loc = [
+                      business.location?.cell || business.cell,
+                      business.location?.sector || business.sector,
+                      business.location?.district || business.district,
+                      !isRw ? business.location?.country : undefined
+                    ].filter(Boolean).join(", ");
+                    return business.nearestLandmark ? `${business.nearestLandmark} • ${loc}` : (loc || (isRw ? "Rwanda" : "Global"));
+                  })()}
                 </p>
               </div>
 
@@ -7990,7 +7997,7 @@ export default function OwnerDashboardPage() {
                 <div className="p-4 bg-white rounded-2xl border-2 border-slate-900 shadow-md inline-block">
                   <img
                     src={`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(
-                      `https://mosa-one.vercel.app/business/${business.id}`
+                      `https://55mosa.com/business/${business.id}`
                     )}`}
                     alt={`QR Code for ${business.name}`}
                     className="w-48 h-48 sm:w-56 sm:h-56 object-contain"

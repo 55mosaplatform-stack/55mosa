@@ -12,6 +12,7 @@ import {
   ALL_SUBCATEGORIES, 
   ALL_BUSINESS_TYPES 
 } from "@/lib/taxonomy";
+import { getCountryConfig } from "@/lib/country-address-config";
 
 export async function POST(request: Request) {
   try {
@@ -168,22 +169,25 @@ export async function POST(request: Request) {
       }
     }
 
-    // Kigali center fallback if coordinates were not provided at all (-1.9441, 30.0619)
+    const regCountry = body.country && typeof body.country === "string" ? body.country.trim() : "Rwanda";
+    const countryConfig = getCountryConfig(regCountry);
+    const isRw = countryConfig.code === "RW";
+
+    // Country-aware center fallback if coordinates were not provided at all
     if (resolvedLat === null || resolvedLng === null) {
-      resolvedLat = -1.9441;
-      resolvedLng = 30.0619;
+      resolvedLat = countryConfig.defaultCenter.lat;
+      resolvedLng = countryConfig.defaultCenter.lng;
     }
 
-    const regCountry = body.country && typeof body.country === "string" ? body.country.trim() : "Rwanda";
     const regProvince = province && typeof province === "string" ? province.trim() : null;
     let computedAddressNote = localArea?.trim() || null;
-    if (regCountry && regCountry.toLowerCase() !== "rwanda") {
-      const prefix = `[Country: ${regCountry}${regProvince ? ` | Region: ${regProvince}` : ""}]`;
+    if (!isRw) {
+      const prefix = `[Country: ${countryConfig.name}${regProvince ? ` | Region: ${regProvince}` : ""}]`;
       computedAddressNote = computedAddressNote ? `${prefix} ${computedAddressNote}` : prefix;
     }
 
     // 3-7. Atomic Transaction: User Account + Business + Products + AuditLog
-      const { user, business } = await prisma.$transaction(async (tx) => {
+    const { user, business } = await prisma.$transaction(async (tx) => {
       let u = await tx.user.findUnique({
         where: { phone: cleanPhone },
       });
@@ -208,7 +212,9 @@ export async function POST(request: Request) {
             name: ownerName && ownerName.trim() ? ownerName.trim() : `${name.trim()} Owner`,
             role: Role.BUSINESS_OWNER,
             passwordHash,
-            community: sector?.trim() || district?.trim() || "Kigali",
+            community: isRw
+              ? (sector?.trim() || district?.trim() || "Kigali")
+              : (district?.trim() || province?.trim() || countryConfig.name),
             language: body.preferredLanguage || "rw",
             status: "ACTIVE",
             referralCode: `MOSA-${cleanPhone.slice(-4)}-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -240,9 +246,9 @@ export async function POST(request: Request) {
           phone: cleanPhone,
           whatsapp: cleanWhatsapp,
           ownerId: u.id,
-          sector: sector?.trim() || "Unspecified",
-          cell: cell?.trim() || "Unspecified",
-          district: district?.trim() || "Gasabo",
+          sector: sector?.trim() || (isRw ? "Unspecified" : (district?.trim() || countryConfig.name)),
+          cell: cell?.trim() || (isRw ? "Unspecified" : (streetName?.trim() || nearestLandmark?.trim() || countryConfig.name)),
+          district: district?.trim() || (isRw ? "Gasabo" : (province?.trim() || countryConfig.name)),
           addressNote: computedAddressNote,
           nearestLandmark: nearestLandmark?.trim() || null,
           streetName: streetName?.trim() || null,

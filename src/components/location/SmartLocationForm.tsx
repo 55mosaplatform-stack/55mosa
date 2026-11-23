@@ -12,11 +12,13 @@ import {
   Loader2,
   Search,
   Sparkles,
-  Sliders
+  Sliders,
+  ExternalLink
 } from "lucide-react";
 import { MosaMap } from "@/components/discovery/MosaMap";
 import { haversineDistance, checkNearDuplicates } from "@/lib/location-quality";
 import { LocationSource, LocationVerificationStatus } from "@/types";
+import { getCountryConfig, GLOBAL_COUNTRY_CONFIGS } from "@/lib/country-address-config";
 
 export const SUPPORTED_COUNTRIES = [
   { code: "RW", name: "Rwanda", flag: "🇷🇼" },
@@ -76,14 +78,19 @@ export function SmartLocationForm({
   const [loadingGeo, setLoadingGeo] = useState(true);
 
   // Administrative hierarchy states
-  const [country, setCountry] = useState(initialValues?.country || "Rwanda");
-  const [province, setProvince] = useState(initialValues?.province || "City of Kigali");
+  const initialCountry = initialValues?.country || "Rwanda";
+  const initialConfig = getCountryConfig(initialCountry);
+
+  const [country, setCountry] = useState(initialCountry);
+  const currentCountryConfig = getCountryConfig(country);
+
+  const [province, setProvince] = useState(initialValues?.province || (country === "Rwanda" ? "City of Kigali" : ""));
   const [provinceId, setProvinceId] = useState(initialValues?.provinceId || "");
-  const [district, setDistrict] = useState(initialValues?.district || "Gasabo");
+  const [district, setDistrict] = useState(initialValues?.district || (country === "Rwanda" ? "Gasabo" : ""));
   const [districtId, setDistrictId] = useState(initialValues?.districtId || "");
-  const [sector, setSector] = useState(initialValues?.sector || "Kacyiru");
+  const [sector, setSector] = useState(initialValues?.sector || (country === "Rwanda" ? "Kacyiru" : ""));
   const [sectorId, setSectorId] = useState(initialValues?.sectorId || "");
-  const [cell, setCell] = useState(initialValues?.cell || "Kamutwa");
+  const [cell, setCell] = useState(initialValues?.cell || (country === "Rwanda" ? "Kamutwa" : ""));
   const [cellId, setCellId] = useState(initialValues?.cellId || "");
   const [village, setVillage] = useState(initialValues?.village || "");
   const [localAreaId, setLocalAreaId] = useState(initialValues?.localAreaId || "");
@@ -95,8 +102,8 @@ export function SmartLocationForm({
   const [locationDescription, setLocationDescription] = useState(initialValues?.locationDescription || "");
 
   // Machine coordinates & verification metadata (saved automatically in background)
-  const [latitude, setLatitude] = useState<number>(initialValues?.latitude ?? -1.942);
-  const [longitude, setLongitude] = useState<number>(initialValues?.longitude ?? 30.088);
+  const [latitude, setLatitude] = useState<number>(initialValues?.latitude ?? initialConfig.defaultCenter.lat);
+  const [longitude, setLongitude] = useState<number>(initialValues?.longitude ?? initialConfig.defaultCenter.lng);
   const [locationSource, setLocationSource] = useState<LocationSource>(initialValues?.locationSource || "ADMIN_MANUAL");
   const [locationAccuracy, setLocationAccuracy] = useState<number | undefined>(initialValues?.locationAccuracy);
   const [locationVerificationStatus, setLocationVerificationStatus] = useState<LocationVerificationStatus>(
@@ -126,6 +133,7 @@ export function SmartLocationForm({
   // Helper to sync geocoder hierarchy with geoTree
   const applyGeocodingHierarchy = (
     h: {
+      country?: string;
       province?: string;
       district?: string;
       sector?: string;
@@ -136,6 +144,20 @@ export function SmartLocationForm({
     },
     tree: any[]
   ) => {
+    // If international or country is not Rwanda, populate native fields directly
+    const isRw = (h.country && h.country.toLowerCase() === "rwanda") || (!h.country && country === "Rwanda");
+    if (!isRw) {
+      if (h.country) setCountry(h.country);
+      if (h.province) setProvince(h.province);
+      if (h.district) setDistrict(h.district);
+      if (h.sector) setSector(h.sector);
+      if (h.cell) setCell(h.cell);
+      if (h.village) setVillage(h.village);
+      if (h.streetName) setStreetName(h.streetName);
+      if (h.nearestLandmark) setNearestLandmark(h.nearestLandmark);
+      return;
+    }
+
     if (!tree || tree.length === 0) {
       latestHierarchyRef.current = h;
       return;
@@ -271,20 +293,28 @@ export function SmartLocationForm({
   // Cascade handlers
   const handleCountryChange = (selectedCountryName: string) => {
     setCountry(selectedCountryName);
+    const cfg = getCountryConfig(selectedCountryName);
+
+    // Update coordinates & center map pin to newly selected country hub
+    setLatitude(cfg.defaultCenter.lat);
+    setLongitude(cfg.defaultCenter.lng);
+    setEstimatedLocation(null);
+    setPinManuallyAdjusted(false);
+
     if (selectedCountryName === "Rwanda") {
-      const p = geoTree[0];
+      const p = geoTree.find((item) => item.name.includes("Kigali")) || geoTree[0];
       if (p) {
         setProvinceId(p.id);
         setProvince(p.name);
-        const firstDist = p.districts?.[0];
+        const firstDist = p.districts?.find((d: any) => d.name === "Gasabo") || p.districts?.[0];
         if (firstDist) {
           setDistrictId(firstDist.id);
           setDistrict(firstDist.name);
-          const firstSec = firstDist.sectors?.[0];
+          const firstSec = firstDist.sectors?.find((s: any) => s.name === "Kacyiru") || firstDist.sectors?.[0];
           if (firstSec) {
             setSectorId(firstSec.id);
             setSector(firstSec.name);
-            const firstCell = firstSec.cells?.[0];
+            const firstCell = firstSec.cells?.find((c: any) => c.name === "Kamutwa") || firstSec.cells?.[0];
             if (firstCell) {
               setCellId(firstCell.id);
               setCell(firstCell.name);
@@ -298,6 +328,11 @@ export function SmartLocationForm({
       setSectorId("");
       setCellId("");
       setLocalAreaId("");
+      setProvince("");
+      setDistrict("");
+      setSector("");
+      setCell("");
+      setVillage("");
     }
   };
 
@@ -383,7 +418,8 @@ export function SmartLocationForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           description: trimmed,
-          context: { province, district, sector, cell },
+          country,
+          context: { country, province, district, sector, cell },
         }),
       });
 
@@ -564,7 +600,7 @@ export function SmartLocationForm({
                 executeGeocode(searchQuery);
               }
             }}
-            placeholder="e.g. Kacyiru, near Kigali Business Centre, KG 7 Ave"
+            placeholder={currentCountryConfig.searchPlaceholder}
             className="w-full pl-3.5 pr-28 py-3 rounded-xl border border-emerald-300/80 bg-white text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-xs shadow-xs"
           />
           <div className="absolute right-1.5 flex items-center gap-1">
@@ -722,14 +758,26 @@ export function SmartLocationForm({
               <strong className="text-emerald-300">Coordinates saved automatically</strong>
             </span>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowTechCoords(!showTechCoords)}
-            className="text-slate-400 hover:text-white underline text-[10px] flex items-center gap-1 cursor-pointer"
-          >
-            <Sliders className="w-3 h-3" />
-            <span>{showTechCoords ? "Hide details" : "Technical details"}</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <a
+              href={`https://www.google.com/maps/@?api=1&map_action=map&center=${latitude},${longitude}&zoom=17`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-emerald-400 hover:text-emerald-300 underline text-[10px] flex items-center gap-1 font-semibold"
+              title="Preview location on Google Maps"
+            >
+              <ExternalLink className="w-3 h-3 text-emerald-400" />
+              <span>Google Maps View</span>
+            </a>
+            <button
+              type="button"
+              onClick={() => setShowTechCoords(!showTechCoords)}
+              className="text-slate-400 hover:text-white underline text-[10px] flex items-center gap-1 cursor-pointer"
+            >
+              <Sliders className="w-3 h-3" />
+              <span>{showTechCoords ? "Hide details" : "Technical details"}</span>
+            </button>
+          </div>
         </div>
 
         {/* Collapsible Technical Details (for advanced users / admins) */}
@@ -903,69 +951,89 @@ export function SmartLocationForm({
           </>
         ) : (
           <>
-            {/* Row 1: Region / State, City / District */}
+            {/* Row 1: Native Country Administrative Level 1 & Level 2 */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>
                 <label className="block text-slate-600 font-bold mb-1">
-                  State / Province / Region <span className="text-red-500">*</span>
+                  {currentCountryConfig.fieldLabels.level1} <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={province}
                   onChange={(e) => setProvince(e.target.value)}
-                  placeholder="e.g. Nairobi, California, Lagos State"
-                  className="w-full p-2 rounded-xl border border-slate-300 bg-white font-medium outline-none focus:border-emerald-500"
+                  placeholder={currentCountryConfig.levelPlaceholders.level1}
+                  className={`w-full p-2 rounded-xl border font-medium outline-none transition-colors ${
+                    errors?.province ? "border-rose-400 bg-rose-50/30 ring-2 ring-rose-200" : "border-slate-300 bg-white focus:border-emerald-500"
+                  }`}
                 />
+                {errors?.province && (
+                  <span className="text-[11px] text-rose-600 font-bold mt-1 block">{errors.province}</span>
+                )}
               </div>
               <div>
                 <label className="block text-slate-600 font-bold mb-1">
-                  City / District / Town <span className="text-red-500">*</span>
+                  {currentCountryConfig.fieldLabels.level2} <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={district}
                   onChange={(e) => setDistrict(e.target.value)}
-                  placeholder="e.g. Westlands, San Francisco, Ikeja"
-                  className="w-full p-2 rounded-xl border border-slate-300 bg-white font-medium outline-none focus:border-emerald-500"
+                  placeholder={currentCountryConfig.levelPlaceholders.level2}
+                  className={`w-full p-2 rounded-xl border font-medium outline-none transition-colors ${
+                    errors?.district ? "border-rose-400 bg-rose-50/30 ring-2 ring-rose-200" : "border-slate-300 bg-white focus:border-emerald-500"
+                  }`}
                 />
+                {errors?.district && (
+                  <span className="text-[11px] text-rose-600 font-bold mt-1 block">{errors.district}</span>
+                )}
               </div>
             </div>
 
-            {/* Row 2: Locality, Neighborhood, Postal */}
+            {/* Row 2: Native Country Level 3, Level 4 & Postal */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               <div>
                 <label className="block text-slate-600 font-bold mb-1">
-                  Locality / Sector / Area <span className="text-red-500">*</span>
+                  {currentCountryConfig.fieldLabels.level3} <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={sector}
                   onChange={(e) => setSector(e.target.value)}
-                  placeholder="e.g. Parklands, Mission District, Victoria Island"
-                  className="w-full p-2 rounded-xl border border-slate-300 bg-white font-medium outline-none focus:border-emerald-500"
+                  placeholder={currentCountryConfig.levelPlaceholders.level3}
+                  className={`w-full p-2 rounded-xl border font-medium outline-none transition-colors ${
+                    errors?.sector ? "border-rose-400 bg-rose-50/30 ring-2 ring-rose-200" : "border-slate-300 bg-white focus:border-emerald-500"
+                  }`}
                 />
+                {errors?.sector && (
+                  <span className="text-[11px] text-rose-600 font-bold mt-1 block">{errors.sector}</span>
+                )}
               </div>
               <div>
                 <label className="block text-slate-600 font-bold mb-1">
-                  Neighborhood / Suburb / Cell <span className="text-red-500">*</span>
+                  {currentCountryConfig.fieldLabels.level4} <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={cell}
                   onChange={(e) => setCell(e.target.value)}
-                  placeholder="e.g. 2nd Avenue, Market Area"
-                  className="w-full p-2 rounded-xl border border-slate-300 bg-white font-medium outline-none focus:border-emerald-500"
+                  placeholder={currentCountryConfig.levelPlaceholders.level4}
+                  className={`w-full p-2 rounded-xl border font-medium outline-none transition-colors ${
+                    errors?.cell ? "border-rose-400 bg-rose-50/30 ring-2 ring-rose-200" : "border-slate-300 bg-white focus:border-emerald-500"
+                  }`}
                 />
+                {errors?.cell && (
+                  <span className="text-[11px] text-rose-600 font-bold mt-1 block">{errors.cell}</span>
+                )}
               </div>
               <div>
                 <label className="block text-slate-600 font-bold mb-1">
-                  Postal Code / Locality Note
+                  {currentCountryConfig.fieldLabels.postalOrVillage}
                 </label>
                 <input
                   type="text"
                   value={village}
                   onChange={(e) => setVillage(e.target.value)}
-                  placeholder="e.g. 00100, Postal code"
+                  placeholder={currentCountryConfig.levelPlaceholders.postalOrVillage}
                   className="w-full p-2 rounded-xl border border-slate-300 bg-white font-medium outline-none focus:border-emerald-500"
                 />
               </div>
@@ -984,13 +1052,13 @@ export function SmartLocationForm({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-slate-700 font-bold mb-1">
-              Street / Road Name <span className="text-slate-400 font-normal">(e.g. KG 7 Ave, KN 123 St)</span>
+              Street / Road Name <span className="text-slate-400 font-normal">({currentCountryConfig.streetExample})</span>
             </label>
             <input
               type="text"
               value={streetName}
               onChange={(e) => setStreetName(e.target.value)}
-              placeholder="e.g. KG 7 Ave, KN 123 St"
+              placeholder={currentCountryConfig.streetExample}
               className="w-full p-2.5 rounded-xl border border-slate-300 bg-white font-medium focus:border-emerald-500"
             />
           </div>
@@ -1004,7 +1072,7 @@ export function SmartLocationForm({
               required
               value={nearestLandmark}
               onChange={(e) => setNearestLandmark(e.target.value)}
-              placeholder="e.g. Kigali Business Centre (KBC), Green Mosque"
+              placeholder={currentCountryConfig.landmarkExample}
               className={`w-full p-2.5 rounded-xl border font-medium transition-colors ${
                 errors?.nearestLandmark
                   ? "border-rose-400 bg-rose-50/30 text-slate-900 ring-2 ring-rose-200"

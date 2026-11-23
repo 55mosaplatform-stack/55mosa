@@ -383,9 +383,11 @@ export default function BusinessDetailPage({
     }),
   };
 
+  const isRwandaBiz = !business.location?.country || business.location?.country.toLowerCase() === "rwanda";
+  const countryName = business.location?.country || (isRwandaBiz ? "Rwanda" : "");
   const locationReference = business.nearestLandmark
-    ? `${business.nearestLandmark} (${business.location?.cell || (business as any).cell || "Kigali"})`
-    : `${business.location?.cell || (business as any).cell || "Kigali"}, ${business.location?.sector || (business as any).sector || "Kigali"}`;
+    ? `${business.nearestLandmark} (${business.location?.cell || (business as any).cell || (isRwandaBiz ? "Kigali" : countryName)})`
+    : `${business.location?.cell || (business as any).cell || (isRwandaBiz ? "Kigali" : countryName)}, ${business.location?.sector || (business as any).sector || business.location?.district || (isRwandaBiz ? "Kigali" : countryName)}`;
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 content-protected">
@@ -528,11 +530,12 @@ export default function BusinessDetailPage({
                     business.location?.cell || (business as any).cell,
                     business.location?.sector || (business as any).sector,
                     business.location?.district || (business as any).district,
+                    (!isRwandaBiz && countryName) ? countryName : undefined,
                   ].filter((s) => s && s.trim() && s !== "Unspecified");
                   if (landmark) {
                     return locDetails.length > 0 ? `${landmark} • ${locDetails.join(", ")}` : landmark;
                   }
-                  return locDetails.length > 0 ? locDetails.join(", ") : "Rwanda";
+                  return locDetails.length > 0 ? locDetails.join(", ") : (isRwandaBiz ? "Rwanda" : countryName || "Global");
                 })()}
               </span>
               {business.location?.addressNote && !business.nearestLandmark && (
@@ -572,11 +575,11 @@ export default function BusinessDetailPage({
                 href={`https://wa.me/${formattedWhatsApp}?text=${encodeURIComponent(
                   lang === "rw"
                     ? (operatingModel.hasBookings
-                        ? `Muraho ${displayName}! Nabonye serivisi zanyu kuri 55 MOSA (${locationReference}). Ndifuza kubaza amakuru / gufata gahunda:\nhttps://mosa-one.vercel.app/business/${business.id}`
-                        : `Muraho ${displayName}! Nabonye ibicuruzwa byanyu kuri 55 MOSA (${locationReference}). Ndifuza kubaza amakuru / gutumiza:\nhttps://mosa-one.vercel.app/business/${business.id}`)
+                        ? `Muraho ${displayName}! Nabonye serivisi zanyu kuri 55 MOSA (${locationReference}). Ndifuza kubaza amakuru / gufata gahunda:\nhttps://55mosa.com/business/${business.id}`
+                        : `Muraho ${displayName}! Nabonye ibicuruzwa byanyu kuri 55 MOSA (${locationReference}). Ndifuza kubaza amakuru / gutumiza:\nhttps://55mosa.com/business/${business.id}`)
                     : (operatingModel.hasBookings
-                        ? `Hello ${displayName}! I saw your services on 55 MOSA (${locationReference}). I would like to inquire / book an appointment:\nhttps://mosa-one.vercel.app/business/${business.id}`
-                        : `Hello ${displayName}! I found your business on 55 MOSA (${locationReference}). I would like to inquire / place an order:\nhttps://mosa-one.vercel.app/business/${business.id}`)
+                        ? `Hello ${displayName}! I saw your services on 55 MOSA (${locationReference}). I would like to inquire / book an appointment:\nhttps://55mosa.com/business/${business.id}`
+                        : `Hello ${displayName}! I found your business on 55 MOSA (${locationReference}). I would like to inquire / place an order:\nhttps://55mosa.com/business/${business.id}`)
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -768,18 +771,18 @@ export default function BusinessDetailPage({
                   const waText = lang === "rw"
                     ? (item.isService || operatingModel.hasBookings
                         ? (isContactForPrice
-                            ? `Muraho ${displayName}! Nabonye serivisi yanyu kuri 55 MOSA:\n• Serivisi: ${itemNameStr}\n• Aho mukorera: ${locationReference}\nNdifuza kubaza igiciro no gufata gahunda:\nhttps://mosa-one.vercel.app/business/${business.id}`
-                            : `Muraho ${displayName}! Nabonye serivisi yanyu kuri 55 MOSA:\n• Serivisi: ${itemNameStr}\n• Igiciro: ${priceLabel}\n• Aho mukorera: ${locationReference}\nNdifuza gufata gahunda / kubaza amakuru:\nhttps://mosa-one.vercel.app/business/${business.id}`)
+                            ? `Muraho ${displayName}! Nabonye serivisi yanyu kuri 55 MOSA:\n• Serivisi: ${itemNameStr}\n• Aho mukorera: ${locationReference}\nNdifuza kubaza igiciro no gufata gahunda:\nhttps://55mosa.com/business/${business.id}`
+                            : `Muraho ${displayName}! Nabonye serivisi yanyu kuri 55 MOSA:\n• Serivisi: ${itemNameStr}\n• Igiciro: ${priceLabel}\n• Aho mukorera: ${locationReference}\nNdifuza gufata gahunda / kubaza amakuru:\nhttps://55mosa.com/business/${business.id}`)
                         : (isContactForPrice
-                            ? `Muraho ${displayName}! Nabonye igicuruzwa cyanyu kuri 55 MOSA:\n• Igicuruzwa: ${itemNameStr}\n• Aho mukorera: ${locationReference}\nNdifuza kubaza igiciro n'uko kiboneka:\nhttps://mosa-one.vercel.app/business/${business.id}`
-                            : `Muraho ${displayName}! Nabonye igicuruzwa cyanyu kuri 55 MOSA:\n• Igicuruzwa: ${itemNameStr}\n• Igiciro: ${priceLabel}\n• Aho mukorera: ${locationReference}\nEse kirahari uyu munsi? Ndifuza gutumiza:\nhttps://mosa-one.vercel.app/business/${business.id}`))
+                            ? `Muraho ${displayName}! Nabonye igicuruzwa cyanyu kuri 55 MOSA:\n• Igicuruzwa: ${itemNameStr}\n• Aho mukorera: ${locationReference}\nNdifuza kubaza igiciro n'uko kiboneka:\nhttps://55mosa.com/business/${business.id}`
+                            : `Muraho ${displayName}! Nabonye igicuruzwa cyanyu kuri 55 MOSA:\n• Igicuruzwa: ${itemNameStr}\n• Igiciro: ${priceLabel}\n• Aho mukorera: ${locationReference}\nEse kirahari uyu munsi? Ndifuza gutumiza:\nhttps://55mosa.com/business/${business.id}`))
                     : (item.isService || operatingModel.hasBookings
                         ? (isContactForPrice
-                            ? `Hello ${displayName}! I saw your service on 55 MOSA:\n• Service: ${itemNameStr}\n• Location: ${locationReference}\nI would like to inquire about pricing and book an appointment:\nhttps://mosa-one.vercel.app/business/${business.id}`
-                            : `Hello ${displayName}! I saw your service on 55 MOSA:\n• Service: ${itemNameStr}\n• Price: ${priceLabel}\n• Location: ${locationReference}\nI would like to book / inquire:\nhttps://mosa-one.vercel.app/business/${business.id}`)
+                            ? `Hello ${displayName}! I saw your service on 55 MOSA:\n• Service: ${itemNameStr}\n• Location: ${locationReference}\nI would like to inquire about pricing and book an appointment:\nhttps://55mosa.com/business/${business.id}`
+                            : `Hello ${displayName}! I saw your service on 55 MOSA:\n• Service: ${itemNameStr}\n• Price: ${priceLabel}\n• Location: ${locationReference}\nI would like to book / inquire:\nhttps://55mosa.com/business/${business.id}`)
                         : (isContactForPrice
-                            ? `Hello ${displayName}! I found your product on 55 MOSA:\n• Product: ${itemNameStr}\n• Location: ${locationReference}\nI would like to inquire about price and availability:\nhttps://mosa-one.vercel.app/business/${business.id}`
-                            : `Hello ${displayName}! I found your product on 55 MOSA:\n• Product: ${itemNameStr}\n• Price: ${priceLabel}\n• Location: ${locationReference}\nIs this item available today? I would like to order:\nhttps://mosa-one.vercel.app/business/${business.id}`));
+                            ? `Hello ${displayName}! I found your product on 55 MOSA:\n• Product: ${itemNameStr}\n• Location: ${locationReference}\nI would like to inquire about price and availability:\nhttps://55mosa.com/business/${business.id}`
+                            : `Hello ${displayName}! I found your product on 55 MOSA:\n• Product: ${itemNameStr}\n• Price: ${priceLabel}\n• Location: ${locationReference}\nIs this item available today? I would like to order:\nhttps://55mosa.com/business/${business.id}`));
 
                   return (
                     <div key={item.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group">

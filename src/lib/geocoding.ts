@@ -1,6 +1,8 @@
+import { getCountryConfig, GLOBAL_COUNTRY_CONFIGS } from "./country-address-config";
+
 /**
- * MOSA Rwanda Geocoding Intelligence & Ground Landmark Resolution Engine
- * Interprets natural human location descriptions and resolves accurate geographic coordinates.
+ * MOSA Rwanda & Global Geocoding Intelligence & Ground Landmark Resolution Engine
+ * Interprets natural human location descriptions and resolves accurate geographic coordinates worldwide.
  */
 
 export interface GeocodingResult {
@@ -442,15 +444,17 @@ export function searchGroundLandmarkIndex(query: string): GroundLandmark | null 
 }
 
 /**
- * Calls Google Geocoding API if key is present
+ * Calls Google Geocoding API if key is present (Supports worldwide geocoding & country filtering)
  */
-export async function geocodeWithGoogle(query: string): Promise<GeocodingResult | null> {
+export async function geocodeWithGoogle(query: string, countryCode?: string): Promise<GeocodingResult | null> {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   if (!apiKey) return null;
 
   try {
-    const address = `${query}, Rwanda`;
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&components=country:RW&key=${apiKey}`;
+    const isRw = !countryCode || countryCode.toUpperCase() === "RW";
+    const address = isRw ? (query.toLowerCase().includes("rwanda") ? query : `${query}, Rwanda`) : query;
+    const countryFilter = countryCode && countryCode !== "OTHER" ? `&components=country:${countryCode}` : "";
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}${countryFilter}&key=${apiKey}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
     if (!res.ok) return null;
     const data = await res.json();
@@ -460,18 +464,30 @@ export async function geocodeWithGoogle(query: string): Promise<GeocodingResult 
       const lat = top.geometry.location.lat;
       const lng = top.geometry.location.lng;
 
-      // Extract components
-      let province = "City of Kigali";
+      // Extract components dynamically
+      let country = isRw ? "Rwanda" : "";
+      let province = "";
       let district = "";
       let sector = "";
+      let cell = "";
       let street = "";
+      let postal = "";
 
       for (const comp of top.address_components || []) {
         const types: string[] = comp.types || [];
+        if (types.includes("country")) country = comp.long_name;
         if (types.includes("administrative_area_level_1")) province = comp.long_name;
         if (types.includes("administrative_area_level_2")) district = comp.long_name;
-        if (types.includes("locality") || types.includes("sublocality")) sector = comp.long_name;
+        if (types.includes("locality") || types.includes("postal_town")) {
+          if (!district) district = comp.long_name;
+          else if (!sector) sector = comp.long_name;
+        }
+        if (types.includes("sublocality") || types.includes("sublocality_level_1") || types.includes("neighborhood")) {
+          if (!sector) sector = comp.long_name;
+          else if (!cell) cell = comp.long_name;
+        }
         if (types.includes("route")) street = comp.long_name;
+        if (types.includes("postal_code")) postal = comp.long_name;
       }
 
       return {
@@ -481,10 +497,12 @@ export async function geocodeWithGoogle(query: string): Promise<GeocodingResult 
         matchedPlace: top.formatted_address || query,
         source: "google",
         hierarchy: {
-          country: "Rwanda",
-          province,
+          country: country || (isRw ? "Rwanda" : "International"),
+          province: province || undefined,
           district: district || undefined,
           sector: sector || undefined,
+          cell: cell || undefined,
+          village: postal || undefined,
           streetName: street || undefined,
           nearestLandmark: query.slice(0, 50),
         },
@@ -497,13 +515,18 @@ export async function geocodeWithGoogle(query: string): Promise<GeocodingResult 
 }
 
 /**
- * Calls OpenStreetMap Nominatim Geocoding API (Restricted to Rwanda)
+ * Calls OpenStreetMap Nominatim Geocoding API (Worldwide or country-filtered)
  */
-export async function geocodeWithNominatim(query: string): Promise<GeocodingResult | null> {
+export async function geocodeWithNominatim(query: string, countryCode?: string): Promise<GeocodingResult | null> {
   try {
-    const isInternational = /\b(kenya|uganda|tanzania|nigeria|ghana|south africa|usa|uk|united states|united kingdom|london|nairobi|kampala|lagos|accra|new york|california)\b/i.test(query);
-    const address = isInternational || query.toLowerCase().includes("rwanda") ? query : `${query}, Rwanda`;
-    const countryFilter = isInternational ? "" : "&countrycodes=rw";
+    const isRw = !countryCode || countryCode.toUpperCase() === "RW";
+    const cleanCC = countryCode && countryCode !== "OTHER" ? countryCode.toLowerCase() : "";
+
+    let address = query;
+    if (isRw && !query.toLowerCase().includes("rwanda")) {
+      address = `${query}, Rwanda`;
+    }
+    const countryFilter = cleanCC ? `&countrycodes=${cleanCC}` : "";
     const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json${countryFilter}&limit=3&addressdetails=1`;
     const res = await fetch(url, {
       headers: {
@@ -524,14 +547,17 @@ export async function geocodeWithNominatim(query: string): Promise<GeocodingResu
       if (isNaN(lat) || isNaN(lng)) return null;
 
       // Validate bounds: if Rwanda-targeted, ensure within Rwanda; if international, ensure valid globe coordinates
-      if (!isInternational && (lat < -2.9 || lat > -1.0 || lng < 28.8 || lng > 30.9)) return null;
+      if (isRw && (lat < -2.9 || lat > -1.0 || lng < 28.8 || lng > 30.9)) return null;
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
 
       const addr = top.address || {};
-      const sector = addr.suburb || addr.neighbourhood || addr.city_district || "";
-      const district = addr.county || addr.city || "";
-      const province = addr.state || addr.region || (isInternational ? addr.country || "International" : "City of Kigali");
-      const street = addr.road || "";
-      const countryFound = addr.country || (isInternational ? "International" : "Rwanda");
+      const countryFound = addr.country || (isRw ? "Rwanda" : "International");
+      const province = addr.state || addr.region || addr.province || (isRw ? "City of Kigali" : "");
+      const district = addr.county || addr.city || addr.town || addr.municipality || "";
+      const sector = addr.suburb || addr.city_district || addr.district || "";
+      const cell = addr.neighbourhood || addr.quarter || addr.subdivision || "";
+      const street = addr.road || addr.street || addr.pedestrian || "";
+      const postal = addr.postcode || "";
 
       return {
         lat: Number(lat.toFixed(6)),
@@ -541,9 +567,11 @@ export async function geocodeWithNominatim(query: string): Promise<GeocodingResu
         source: "nominatim",
         hierarchy: {
           country: countryFound,
-          province,
+          province: province || undefined,
           district: district || undefined,
           sector: sector || undefined,
+          cell: cell || undefined,
+          village: postal || undefined,
           streetName: street || undefined,
           nearestLandmark: top.name || query.slice(0, 50),
         },
@@ -557,99 +585,120 @@ export async function geocodeWithNominatim(query: string): Promise<GeocodingResu
 
 /**
  * Master Smart Interpreter function for MOSA:
- * Combines Google, Nominatim, and Authoritative Ground Landmark Index
+ * Combines Google, Nominatim, and Authoritative Ground Landmark Index across Rwanda and Worldwide.
+ */
+export async function interpretLocationDescription(
+  description: string,
+  geoContext?: { country?: string; province?: string; district?: string; sector?: string; cell?: string }
+): Promise<GeocodingResult> {
+  const query = description.trim();
+  const rawCountry = geoContext?.country || "Rwanda";
+  const countryConfig = getCountryConfig(rawCountry);
+  const isRwanda = countryConfig.code === "RW";
+
+  if (!query) {
+    return {
+      lat: countryConfig.defaultCenter.lat,
+      lng: countryConfig.defaultCenter.lng,
+      confidence: "LOW",
+      matchedPlace: `${countryConfig.name} default center`,
+      source: "administrative_fallback",
+      hierarchy: {
+        country: countryConfig.name,
+        province: geoContext?.province || (isRwanda ? "City of Kigali" : countryConfig.name),
+      },
+    };
+  }
+
+  // 1. If Rwanda: Check Ground Landmark Index first for instant zero-latency match
+  if (isRwanda) {
+    const groundMatch = searchGroundLandmarkIndex(query);
+    if (groundMatch) {
+      return {
+        lat: groundMatch.lat,
+        lng: groundMatch.lng,
+        confidence: groundMatch.confidence,
+        matchedPlace: `${groundMatch.name}${groundMatch.streetName ? ", " + groundMatch.streetName : ""}, ${groundMatch.sector}`,
+        source: "rwanda_ground_index",
+        hierarchy: {
+          country: "Rwanda",
+          province: groundMatch.province,
+          district: groundMatch.district,
+          sector: groundMatch.sector,
+          cell: groundMatch.cell,
+          streetName: groundMatch.streetName,
+          nearestLandmark: groundMatch.landmark,
+        },
+      };
+    }
+  }
+
+  // 2. Try Google Geocoding if API Key is configured (with target country code)
+  const googleResult = await geocodeWithGoogle(query, countryConfig.code);
+  if (googleResult) {
+    return googleResult;
+  }
+
+  // 3. Try Nominatim OpenStreetMap Geocoder (with target country code)
+  const nominatimResult = await geocodeWithNominatim(query, countryConfig.code);
+  if (nominatimResult) {
+    return nominatimResult;
+  }
+
+  // 4. If Rwanda: Sector Explicit Mention in Query
+  if (isRwanda) {
+    const cleaned = cleanQuery(query);
+    const textMentionedSector = RWANDA_GROUND_INDEX.find(
+      (item) => cleaned.includes(item.sector.toLowerCase())
+    );
+
+    if (textMentionedSector) {
+      return {
+        lat: textMentionedSector.lat,
+        lng: textMentionedSector.lng,
+        confidence: "MEDIUM",
+        matchedPlace: `${textMentionedSector.sector}, ${textMentionedSector.district}, ${textMentionedSector.province}`,
+        source: "rwanda_ground_index",
+        hierarchy: {
+          country: "Rwanda",
+          province: textMentionedSector.province,
+          district: textMentionedSector.district,
+          sector: textMentionedSector.sector,
+          nearestLandmark: query.slice(0, 50),
+        },
+      };
+    }
+  }
+
+  // 5. Unresolved / Vague Description (Fallback with LOW confidence centering on country hub)
+  const contextSectorMatch = (isRwanda && geoContext?.sector)
+    ? RWANDA_GROUND_INDEX.find((item) => item.sector.toLowerCase() === geoContext.sector?.toLowerCase())
+    : null;
+
+  return {
+    lat: contextSectorMatch ? contextSectorMatch.lat : countryConfig.defaultCenter.lat,
+    lng: contextSectorMatch ? contextSectorMatch.lng : countryConfig.defaultCenter.lng,
+    confidence: "LOW",
+    matchedPlace: contextSectorMatch
+      ? `Approximate area (${contextSectorMatch.sector}, ${contextSectorMatch.district})`
+      : `Approximate area (${countryConfig.name})`,
+    source: "administrative_fallback",
+    hierarchy: {
+      country: countryConfig.name,
+      province: geoContext?.province || contextSectorMatch?.province || (isRwanda ? "City of Kigali" : countryConfig.name),
+      district: geoContext?.district || contextSectorMatch?.district || (isRwanda ? "Gasabo" : ""),
+      sector: geoContext?.sector || contextSectorMatch?.sector || (isRwanda ? "Kacyiru" : ""),
+      nearestLandmark: query.slice(0, 50),
+    },
+  };
+}
+
+/**
+ * Backward compatibility alias for Rwanda location interpretation
  */
 export async function interpretRwandaLocationDescription(
   description: string,
   geoContext?: { province?: string; district?: string; sector?: string; cell?: string }
 ): Promise<GeocodingResult> {
-  const query = description.trim();
-  if (!query) {
-    return {
-      lat: -1.944,
-      lng: 30.061,
-      confidence: "LOW",
-      matchedPlace: "Kigali, Rwanda",
-      source: "administrative_fallback",
-      hierarchy: { country: "Rwanda", province: "City of Kigali" },
-    };
-  }
-
-  // 1. Check Ground Landmark Index first for instant zero-latency match
-  const groundMatch = searchGroundLandmarkIndex(query);
-  if (groundMatch) {
-    return {
-      lat: groundMatch.lat,
-      lng: groundMatch.lng,
-      confidence: groundMatch.confidence,
-      matchedPlace: `${groundMatch.name}${groundMatch.streetName ? ", " + groundMatch.streetName : ""}, ${groundMatch.sector}`,
-      source: "rwanda_ground_index",
-      hierarchy: {
-        country: "Rwanda",
-        province: groundMatch.province,
-        district: groundMatch.district,
-        sector: groundMatch.sector,
-        cell: groundMatch.cell,
-        streetName: groundMatch.streetName,
-        nearestLandmark: groundMatch.landmark,
-      },
-    };
-  }
-
-  // 2. Try Google Geocoding if API Key is configured
-  const googleResult = await geocodeWithGoogle(query);
-  if (googleResult) {
-    return googleResult;
-  }
-
-  // 3. Try Nominatim OpenStreetMap Geocoder
-  const nominatimResult = await geocodeWithNominatim(query);
-  if (nominatimResult) {
-    return nominatimResult;
-  }
-
-  // 4. Sector Explicit Mention in Query
-  const cleaned = cleanQuery(query);
-  const textMentionedSector = RWANDA_GROUND_INDEX.find(
-    (item) => cleaned.includes(item.sector.toLowerCase())
-  );
-
-  if (textMentionedSector) {
-    return {
-      lat: textMentionedSector.lat,
-      lng: textMentionedSector.lng,
-      confidence: "MEDIUM",
-      matchedPlace: `${textMentionedSector.sector}, ${textMentionedSector.district}, ${textMentionedSector.province}`,
-      source: "rwanda_ground_index",
-      hierarchy: {
-        country: "Rwanda",
-        province: textMentionedSector.province,
-        district: textMentionedSector.district,
-        sector: textMentionedSector.sector,
-        nearestLandmark: query.slice(0, 50),
-      },
-    };
-  }
-
-  // 5. Unresolved / Vague Description (Fallback with LOW confidence asking user to adjust pin manually)
-  const contextSectorMatch = geoContext?.sector
-    ? RWANDA_GROUND_INDEX.find((item) => item.sector.toLowerCase() === geoContext.sector?.toLowerCase())
-    : null;
-
-  return {
-    lat: contextSectorMatch ? contextSectorMatch.lat : -1.9441,
-    lng: contextSectorMatch ? contextSectorMatch.lng : 30.0619,
-    confidence: "LOW",
-    matchedPlace: contextSectorMatch
-      ? `Approximate area (${contextSectorMatch.sector}, ${contextSectorMatch.district})`
-      : "Approximate location (Central Kigali)",
-    source: "administrative_fallback",
-    hierarchy: {
-      country: "Rwanda",
-      province: geoContext?.province || contextSectorMatch?.province || "City of Kigali",
-      district: geoContext?.district || contextSectorMatch?.district || "Nyarugenge",
-      sector: geoContext?.sector || contextSectorMatch?.sector || "Nyarugenge",
-      nearestLandmark: query.slice(0, 50),
-    },
-  };
+  return interpretLocationDescription(description, { ...geoContext, country: "Rwanda" });
 }

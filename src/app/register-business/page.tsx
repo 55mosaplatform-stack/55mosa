@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/i18n";
 import { processDeviceUpload, isVideoMedia } from "@/lib/media-upload";
 import { SmartLocationForm, SmartLocationFormData } from "@/components/location/SmartLocationForm";
+import { getCountryConfig } from "@/lib/country-address-config";
 import { 
   Store, 
   MapPin, 
@@ -533,10 +534,11 @@ export default function RegisterBusinessPage() {
   // Step 2 Validation
   const validateStep2 = () => {
     const errors: Record<string, string> = {};
-    if (!locationData.province) errors.province = "Province is required";
-    if (!locationData.district) errors.district = "District is required";
-    if (!locationData.sector) errors.sector = "Sector is required";
-    if (!locationData.cell) errors.cell = "Cell is required";
+    const cfg = getCountryConfig(locationData.country);
+    if (!locationData.province) errors.province = `${cfg.fieldLabels.level1} is required`;
+    if (!locationData.district) errors.district = `${cfg.fieldLabels.level2} is required`;
+    if (!locationData.sector) errors.sector = `${cfg.fieldLabels.level3} is required`;
+    if (!locationData.cell) errors.cell = `${cfg.fieldLabels.level4} is required`;
     if (!locationData.nearestLandmark || !locationData.nearestLandmark.trim()) {
       errors.nearestLandmark = (t.registration as any)?.errors?.landmarkRequired || "Nearest recognizable landmark is required";
     }
@@ -545,8 +547,8 @@ export default function RegisterBusinessPage() {
     if (Object.keys(errors).length > 0) {
       setErrorMsg(
         lang === "rw"
-          ? "Nyamuneka hitamo Akarere, Umurenge, Akagari kandi wandike ikimenyetso kigaragara cyo ku butaka (Landmark)."
-          : "Please specify your district, sector, cell and nearest recognizable walking landmark."
+          ? "Nyamuneka hitamo aho mukorera hose kandi wandike ikimenyetso kigaragara cyo ku butaka (Landmark)."
+          : `Please specify your ${cfg.fieldLabels.level2.toLowerCase()}, ${cfg.fieldLabels.level3.toLowerCase()}, ${cfg.fieldLabels.level4.toLowerCase()} and nearest walking landmark.`
       );
       return false;
     }
@@ -633,7 +635,9 @@ export default function RegisterBusinessPage() {
       },
       {
         id: "admin_location",
-        label: "Administrative Cell, Sector, District",
+        label: !locationData.country || locationData.country.toLowerCase() === "rwanda"
+          ? "Administrative Cell, Sector, District"
+          : `${locationData.country} Administrative Location`,
         valid: Boolean(locationData.province && locationData.district && locationData.sector && locationData.cell),
         step: 2,
       },
@@ -762,6 +766,7 @@ export default function RegisterBusinessPage() {
         whatsapp: effectiveWhatsapp,
         password: formData.password,
         coverImage: formData.coverImage.trim() || undefined,
+        country: locationData.country || "Rwanda",
         province: locationData.province,
         district: locationData.district,
         sector: locationData.sector,

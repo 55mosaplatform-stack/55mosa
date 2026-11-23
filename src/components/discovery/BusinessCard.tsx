@@ -264,8 +264,8 @@ export function BusinessCard({ business, variant = "standard", className = "" }:
               const locationStr = business.nearestLandmark || locationLabel;
               const waText = encodeURIComponent(
                 lang === "rw"
-                  ? `Muraho ${displayName}! Nabonye ubucuruzi bwanyu kuri 55 MOSA (${locationStr}). Ndifuza kubaza amakuru n'ibicuruzwa/serivisi mukora:\nhttps://mosa-one.vercel.app/business/${business.id}`
-                  : `Hello ${displayName}! I found your business on 55 MOSA (${locationStr}). I would like to inquire about your products and services:\nhttps://mosa-one.vercel.app/business/${business.id}`
+                  ? `Muraho ${displayName}! Nabonye ubucuruzi bwanyu kuri 55 MOSA (${locationStr}). Ndifuza kubaza amakuru n'ibicuruzwa/serivisi mukora:\nhttps://55mosa.com/business/${business.id}`
+                  : `Hello ${displayName}! I found your business on 55 MOSA (${locationStr}). I would like to inquire about your products and services:\nhttps://55mosa.com/business/${business.id}`
               );
               return (
                 <a

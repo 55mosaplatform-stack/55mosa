@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { interpretRwandaLocationDescription } from "@/lib/geocoding";
+import { interpretLocationDescription } from "@/lib/geocoding";
 
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const description = (body.description || body.query || body.text || "").trim();
     const context = body.context || undefined;
+    const country = body.country || context?.country || undefined;
 
     if (!description) {
       return NextResponse.json(
@@ -14,7 +15,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await interpretRwandaLocationDescription(description, context);
+    const result = await interpretLocationDescription(description, {
+      ...context,
+      country,
+    });
 
     return NextResponse.json({
       success: true,
@@ -36,6 +40,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const description = (searchParams.get("description") || searchParams.get("q") || "").trim();
+    const country = searchParams.get("country") || undefined;
     const province = searchParams.get("province") || undefined;
     const district = searchParams.get("district") || undefined;
     const sector = searchParams.get("sector") || undefined;
@@ -47,8 +52,8 @@ export async function GET(request: Request) {
       );
     }
 
-    const context = (province || district || sector) ? { province, district, sector } : undefined;
-    const result = await interpretRwandaLocationDescription(description, context);
+    const context = (country || province || district || sector) ? { country, province, district, sector } : undefined;
+    const result = await interpretLocationDescription(description, context);
 
     return NextResponse.json({
       success: true,

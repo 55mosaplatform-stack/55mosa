@@ -34,17 +34,19 @@ export function formatBusinessRecord(raw: any): Business {
     cleanAddressNote = cleanAddressNote.replace(/\[Country:[^\]]+\]\s*/i, "").trim();
   }
 
+  const isRw = !detectedCountry || detectedCountry.toLowerCase() === "rwanda";
+
   if (!detectedCountry) detectedCountry = "Rwanda";
   if (!detectedProvince) {
-    detectedProvince = raw.provinceRel?.name || (raw.district === "Gasabo" ? "City of Kigali" : (raw.district ? `${raw.district} Province` : "City of Kigali"));
+    detectedProvince = raw.provinceRel?.name || (isRw ? (raw.district === "Gasabo" ? "City of Kigali" : (raw.district ? `${raw.district} Province` : "City of Kigali")) : detectedCountry);
   }
 
-  // Build safe RwandaLocation
+  // Build safe RwandaLocation (supports Rwanda and Global businesses)
   const location: RwandaLocation = {
     country: detectedCountry,
     province: detectedProvince,
-    district: raw.district || raw.districtRel?.name || raw.location?.district || "Gasabo",
-    sector: raw.sector || raw.sectorRel?.name || raw.location?.sector || (raw.district === "Gasabo" ? "Kacyiru" : ""),
+    district: raw.district || raw.districtRel?.name || raw.location?.district || (isRw ? "Gasabo" : detectedCountry),
+    sector: raw.sector || raw.sectorRel?.name || raw.location?.sector || (isRw ? (raw.district === "Gasabo" ? "Kacyiru" : "") : ""),
     cell: raw.cell || raw.cellRel?.name || raw.location?.cell || "",
     community: raw.location?.community || raw.localArea?.name || cleanAddressNote || raw.cell || raw.sector || "",
     addressNote: cleanAddressNote,
