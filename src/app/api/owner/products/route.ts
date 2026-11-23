@@ -78,6 +78,25 @@ export async function POST(request: Request) {
     // Determine normalized priceType
     const normPriceType = (priceType as PriceType) || (isContactForPrice ? "ESTIMATED" : (priceMin && priceMax ? "RANGE" : (isEstimated ? "ESTIMATED" : "FIXED")));
 
+    // Backend Idempotency & Deduplication Safeguard:
+    // If a product with the same name was created within the last 60 seconds, return the existing row.
+    const recentDuplicate = await prisma.product.findFirst({
+      where: {
+        businessId,
+        name: { equals: name.trim(), mode: "insensitive" },
+        createdAt: { gte: new Date(Date.now() - 60000) },
+      },
+    });
+
+    if (recentDuplicate) {
+      return NextResponse.json({
+        success: true,
+        product: recentDuplicate,
+        deduplicated: true,
+        message: "Product already added to live catalogue",
+      });
+    }
+
     // Create Product and Audit History atomically in Neon PostgreSQL
     const product = await prisma.$transaction(async (tx) => {
       const p = await tx.product.create({

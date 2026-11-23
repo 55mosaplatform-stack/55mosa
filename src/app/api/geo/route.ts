@@ -3,6 +3,52 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditEvent } from "@/lib/audit";
 import { Role } from "@prisma/client";
+import { RWANDA_HIERARCHY } from "@/lib/rwanda-geo";
+
+function buildFallbackTree() {
+  const provinces = Object.entries(RWANDA_HIERARCHY).map(([pKey, pVal]) => ({
+    id: `fallback-prov-${pKey}`,
+    code: pKey.toUpperCase(),
+    name: pVal.name,
+    nameRw: pVal.nameRw,
+    districts: Object.entries(pVal.districts).map(([dKey, dVal]) => ({
+      id: `fallback-dist-${dKey}`,
+      code: dKey.toUpperCase(),
+      name: dVal.name,
+      nameRw: dVal.nameRw,
+      sectors: Object.entries(dVal.sectors).map(([sKey, sVal]) => ({
+        id: `fallback-sect-${sKey}`,
+        code: `${dKey.toUpperCase()}_${sKey.toUpperCase()}`,
+        name: sVal.name,
+        nameRw: sVal.nameRw,
+        cells: Object.entries(sVal.cells).map(([cKey, cVal]) => ({
+          id: `fallback-cell-${cKey}`,
+          name: cVal.name,
+          nameRw: cVal.nameRw,
+          localAreas: cVal.communities.map((comm) => ({
+            id: `fallback-area-${comm.code}`,
+            name: comm.name,
+            nameRw: comm.nameRw,
+            latitude: comm.lat,
+            longitude: comm.lng,
+          })),
+          _count: { businesses: 0 },
+        })),
+        _count: { businesses: 0, agents: 0 },
+      })),
+      _count: { sectors: Object.keys(dVal.sectors).length, businesses: 0 },
+    })),
+  }));
+
+  const counts = {
+    provinces: provinces.length,
+    districts: provinces.reduce((acc, p) => acc + p.districts.length, 0),
+    sectors: provinces.reduce((acc, p) => acc + p.districts.reduce((dAcc, d) => dAcc + d.sectors.length, 0), 0),
+    cells: provinces.reduce((acc, p) => acc + p.districts.reduce((dAcc, d) => dAcc + d.sectors.reduce((sAcc, s) => sAcc + s.cells.length, 0), 0), 0),
+  };
+
+  return { counts, provinces };
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -143,24 +189,34 @@ export async function GET(request: Request) {
       orderBy: { name: "asc" },
     });
 
-    const counts = {
+    let finalProvinces = provinces;
+    let counts = {
       provinces: provinces.length,
       districts: provinces.reduce((acc, p) => acc + p.districts.length, 0),
       sectors: provinces.reduce((acc, p) => acc + p.districts.reduce((dAcc, d) => dAcc + d.sectors.length, 0), 0),
       cells: provinces.reduce((acc, p) => acc + p.districts.reduce((dAcc, d) => dAcc + d.sectors.reduce((sAcc, s) => sAcc + s.cells.length, 0), 0), 0),
     };
 
+    if (counts.sectors === 0 || finalProvinces.length === 0) {
+      const fallback = buildFallbackTree();
+      counts = fallback.counts;
+      finalProvinces = fallback.provinces as any;
+    }
+
     return NextResponse.json({
       success: true,
       counts,
-      provinces,
+      provinces: finalProvinces,
     });
   } catch (error) {
-    console.error("[Geo API] Error loading geographic hierarchy:", error);
-    return NextResponse.json(
-      { error: "Failed to load geographic data" },
-      { status: 500 }
-    );
+    console.error("[Geo API] Error loading geographic hierarchy, using resilient fallback:", error);
+    const fallback = buildFallbackTree();
+    return NextResponse.json({
+      success: true,
+      counts: fallback.counts,
+      provinces: fallback.provinces,
+      isFallback: true,
+    });
   }
 }
 

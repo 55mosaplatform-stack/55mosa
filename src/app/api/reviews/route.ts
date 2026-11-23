@@ -96,7 +96,7 @@ export async function POST(request: Request) {
           phone: "+250788999888",
           name: typeof userName === "string" ? userName.trim().slice(0, 100) : "Verified Resident",
           role: "CUSTOMER",
-          community: "Nyamirambo",
+          community: "Kigali",
           points: 120,
           badges: ["Neighborhood Explorer"],
           referralCode: "MOSA-NYA-999",

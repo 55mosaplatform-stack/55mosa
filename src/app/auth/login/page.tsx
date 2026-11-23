@@ -18,7 +18,8 @@ import {
   Mail, 
   ArrowLeft, 
   RefreshCw, 
-  X 
+  X,
+  AlertCircle 
 } from "lucide-react";
 
 type AuthTab = "password" | "email" | "register";
@@ -682,12 +683,20 @@ function LoginContent() {
               </div>
             </div>
 
+            {errorMsg && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-bold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer disabled:opacity-60"
+              className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer disabled:opacity-60 flex items-center justify-center gap-2"
             >
-              {loading ? t.auth.creatingAccountBtn : t.auth.createAccountBtn}
+              {loading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+              <span>{loading ? t.auth.creatingAccountBtn : t.auth.createAccountBtn}</span>
             </button>
           </form>
         )}

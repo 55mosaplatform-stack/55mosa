@@ -117,9 +117,62 @@ export async function POST(request: Request) {
     const locVerification: LocationVerificationStatus = hasGps ? LocationVerificationStatus.AGENT_CAPTURED : LocationVerificationStatus.UNVERIFIED;
     const accuracy = hasGps ? Number(locationAccuracy) : null;
     const resolvedProvinceId = body.provinceId || null;
-    const resolvedDistrictId = body.districtId || null;
-    const resolvedSectorId = body.sectorId || null;
-    const resolvedCellId = body.cellId || null;
+    let resolvedDistrictId = body.districtId || null;
+    let resolvedSectorId = body.sectorId || null;
+    let resolvedCellId = body.cellId || null;
+
+    // Resolve geographic entities dynamically to guarantee accurate linking
+    let resolvedLat = hasCoordinates ? Number(latitude) : null;
+    let resolvedLng = hasCoordinates ? Number(longitude) : null;
+
+    if (sector && typeof sector === "string") {
+      const cleanSectorName = sector.trim();
+      const dbSector = await prisma.geographicSector.findFirst({
+        where: { name: { equals: cleanSectorName, mode: "insensitive" } },
+        include: { districtRel: true },
+      });
+      if (dbSector) {
+        if (!resolvedSectorId) resolvedSectorId = dbSector.id;
+        if (!resolvedDistrictId) resolvedDistrictId = dbSector.districtId;
+        if (resolvedLat === null || resolvedLng === null) {
+          resolvedLat = dbSector.latitude;
+          resolvedLng = dbSector.longitude;
+        }
+      }
+    }
+
+    if (district && typeof district === "string" && !resolvedDistrictId) {
+      const cleanDistrictName = district.trim();
+      const dbDistrict = await prisma.geographicDistrict.findFirst({
+        where: { name: { equals: cleanDistrictName, mode: "insensitive" } },
+      });
+      if (dbDistrict) {
+        resolvedDistrictId = dbDistrict.id;
+        if (resolvedLat === null || resolvedLng === null) {
+          resolvedLat = dbDistrict.latitude;
+          resolvedLng = dbDistrict.longitude;
+        }
+      }
+    }
+
+    if (cell && typeof cell === "string" && resolvedSectorId && !resolvedCellId) {
+      const cleanCellName = cell.trim();
+      const dbCell = await prisma.geographicCell.findFirst({
+        where: {
+          sectorId: resolvedSectorId,
+          name: { equals: cleanCellName, mode: "insensitive" },
+        },
+      });
+      if (dbCell) {
+        resolvedCellId = dbCell.id;
+      }
+    }
+
+    // Kigali center fallback if coordinates were not provided at all (-1.9441, 30.0619)
+    if (resolvedLat === null || resolvedLng === null) {
+      resolvedLat = -1.9441;
+      resolvedLng = 30.0619;
+    }
 
     const regCountry = body.country && typeof body.country === "string" ? body.country.trim() : "Rwanda";
     const regProvince = province && typeof province === "string" ? province.trim() : null;
@@ -155,7 +208,7 @@ export async function POST(request: Request) {
             name: ownerName && ownerName.trim() ? ownerName.trim() : `${name.trim()} Owner`,
             role: Role.BUSINESS_OWNER,
             passwordHash,
-            community: sector || "Kigali",
+            community: sector?.trim() || district?.trim() || "Kigali",
             language: body.preferredLanguage || "rw",
             status: "ACTIVE",
             referralCode: `MOSA-${cleanPhone.slice(-4)}-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -187,9 +240,9 @@ export async function POST(request: Request) {
           phone: cleanPhone,
           whatsapp: cleanWhatsapp,
           ownerId: u.id,
-          sector: sector?.trim() || "Nyamirambo",
-          cell: cell?.trim() || "Biryogo",
-          district: district?.trim() || "Nyarugenge",
+          sector: sector?.trim() || "Unspecified",
+          cell: cell?.trim() || "Unspecified",
+          district: district?.trim() || "Gasabo",
           addressNote: computedAddressNote,
           nearestLandmark: nearestLandmark?.trim() || null,
           streetName: streetName?.trim() || null,
@@ -198,8 +251,8 @@ export async function POST(request: Request) {
           locationSource: locSource,
           locationAccuracy: hasGps ? accuracy : null,
           locationVerificationStatus: locVerification,
-          latitude: hasCoordinates ? Number(latitude) : -1.981,
-          longitude: hasCoordinates ? Number(longitude) : 30.046,
+          latitude: resolvedLat,
+          longitude: resolvedLng,
           verificationStatus: "UNVERIFIED",
           status: "PENDING",
           dataStatus: "RESEARCHED",

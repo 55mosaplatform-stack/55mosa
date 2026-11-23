@@ -94,7 +94,7 @@ export async function POST(request: Request) {
           phone: "+250788999888",
           name: "Community Member",
           role: "CUSTOMER",
-          community: "Nyamirambo",
+          community: "Kigali",
           points: 50,
           badges: ["Community Watch"],
           referralCode: "MOSA-NYA-CW",

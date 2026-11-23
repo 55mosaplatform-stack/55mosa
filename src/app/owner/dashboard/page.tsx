@@ -25,6 +25,7 @@ import {
   X,
   AlertTriangle,
   RefreshCw,
+  Loader2,
   Layers,
   Bell,
   History,
@@ -223,6 +224,8 @@ export default function OwnerDashboardPage() {
   const [editProductModalOpen, setEditProductModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null);
   const [postOfferModalOpen, setPostOfferModalOpen] = useState(false);
+  const [isSubmittingProduct, setIsSubmittingProduct] = useState(false);
+  const [isSubmittingEditProduct, setIsSubmittingEditProduct] = useState(false);
 
   // Add/Edit Product form state
   const [productForm, setProductForm] = useState({
@@ -342,19 +345,19 @@ export default function OwnerDashboardPage() {
     country: "Rwanda",
     province: "City of Kigali",
     provinceId: "",
-    district: "Nyarugenge",
+    district: "Gasabo",
     districtId: "",
-    sector: "Nyamirambo",
+    sector: "Kacyiru",
     sectorId: "",
-    cell: "Biryogo",
+    cell: "Kamutwa",
     cellId: "",
     village: "",
     nearestLandmark: "",
     streetName: "",
     nearbyPlace: "",
     locationDescription: "",
-    latitude: -1.981,
-    longitude: 30.046,
+    latitude: -1.9365,
+    longitude: 30.0868,
     locationSource: "OWNER_DECLARED" as string,
     locationAccuracy: undefined as number | undefined,
     locationVerificationStatus: "UNVERIFIED" as string,
@@ -531,19 +534,19 @@ export default function OwnerDashboardPage() {
             country: data.business.location?.country || "Rwanda",
             province: data.business.location?.province || "City of Kigali",
             provinceId: data.business.provinceId || "",
-            district: data.business.location?.district || data.business.district || "Nyarugenge",
+            district: data.business.location?.district || data.business.district || "Gasabo",
             districtId: data.business.districtId || "",
-            sector: data.business.location?.sector || data.business.sector || "Nyamirambo",
+            sector: data.business.location?.sector || data.business.sector || "Kacyiru",
             sectorId: data.business.sectorId || "",
-            cell: data.business.location?.cell || data.business.cell || "Biryogo",
+            cell: data.business.location?.cell || data.business.cell || "Kamutwa",
             cellId: data.business.cellId || "",
             village: data.business.location?.village || "",
             nearestLandmark: data.business.nearestLandmark || data.business.location?.nearestLandmark || "",
             streetName: data.business.streetName || data.business.location?.streetName || "",
             nearbyPlace: data.business.nearbyPlace || data.business.location?.nearbyPlace || "",
             locationDescription: data.business.locationDescription || data.business.location?.locationDescription || "",
-            latitude: data.business.location?.coordinates?.lat ?? data.business.latitude ?? -1.981,
-            longitude: data.business.location?.coordinates?.lng ?? data.business.longitude ?? 30.046,
+            latitude: data.business.location?.coordinates?.lat ?? data.business.latitude ?? -1.9365,
+            longitude: data.business.location?.coordinates?.lng ?? data.business.longitude ?? 30.0868,
             locationSource: data.business.locationSource || data.business.location?.source || "OWNER_DECLARED",
             locationAccuracy: data.business.locationAccuracy ?? data.business.location?.accuracy,
             locationVerificationStatus: data.business.locationVerificationStatus || data.business.location?.verificationStatus || "UNVERIFIED",
@@ -1222,7 +1225,7 @@ export default function OwnerDashboardPage() {
   // Handle Add Product Submit
   const handleAddProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!business || !productForm.name.trim()) return;
+    if (!business || !productForm.name.trim() || isSubmittingProduct) return;
 
     // VALIDATE REQUIRED CAPTION IF MEDIA IS ATTACHED
     if (productForm.mediaUrl.trim() && !productForm.mediaCaption.trim()) {
@@ -1234,6 +1237,7 @@ export default function OwnerDashboardPage() {
       return;
     }
 
+    setIsSubmittingProduct(true);
     try {
       const res = await fetch("/api/owner/products", {
         method: "POST",
@@ -1261,9 +1265,15 @@ export default function OwnerDashboardPage() {
 
       if (res.ok) {
         const data = await res.json();
+        // Prevent duplicate product rows in state
+        const alreadyExists = business.products.some((p) => p.id === data.product?.id);
+        const updatedProducts = alreadyExists
+          ? business.products.map((p) => (p.id === data.product?.id ? data.product : p))
+          : [data.product, ...business.products];
+
         setBusiness({
           ...business,
-          products: [data.product, ...business.products],
+          products: updatedProducts,
         });
         if (data.health) setHealthReport(data.health);
         setAddProductModalOpen(false);
@@ -1292,16 +1302,21 @@ export default function OwnerDashboardPage() {
             : "Product added to catalogue and instantly published on public business page!"
         );
         setTimeout(() => setSaveSuccessMsg(""), 4000);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setErrorMsg(errData.error || "Failed to add product");
       }
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to add product");
+    } finally {
+      setIsSubmittingProduct(false);
     }
   };
 
   // Handle Edit Product (e.g. Price Change from 3,000 -> 3,500 RWF or Media Update)
   const handleEditProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!business || !selectedProduct) return;
+    if (!business || !selectedProduct || isSubmittingEditProduct) return;
 
     if (productForm.mediaUrl.trim() && !productForm.mediaCaption.trim()) {
       setErrorMsg(
@@ -1312,6 +1327,7 @@ export default function OwnerDashboardPage() {
       return;
     }
 
+    setIsSubmittingEditProduct(true);
     try {
       const res = await fetch("/api/owner/products", {
         method: "PATCH",
@@ -1349,9 +1365,14 @@ export default function OwnerDashboardPage() {
             : `Price for "${data.product.name}" updated to ${data.product.price} RWF in database and public website!`
         );
         setTimeout(() => setSaveSuccessMsg(""), 4000);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setErrorMsg(errData.error || "Failed to update product");
       }
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to update product");
+    } finally {
+      setIsSubmittingEditProduct(false);
     }
   };
 
@@ -6588,9 +6609,17 @@ export default function OwnerDashboardPage() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-bold shadow-md hover:bg-emerald-700"
+                  disabled={isSubmittingProduct || !productForm.name.trim()}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-bold shadow-md hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  Add to Live Catalogue
+                  {isSubmittingProduct ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Adding to Live Catalogue...</span>
+                    </>
+                  ) : (
+                    <span>Add to Live Catalogue</span>
+                  )}
                 </button>
               </div>
             </form>
@@ -6861,9 +6890,17 @@ export default function OwnerDashboardPage() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-bold shadow-md hover:bg-emerald-700"
+                  disabled={isSubmittingEditProduct || !productForm.name.trim()}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-bold shadow-md hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  {lang === "rw" ? "Bika Impinduka (Save Changes)" : "Save Changes"}
+                  {isSubmittingEditProduct ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>{lang === "rw" ? "Bika Impinduka..." : "Saving Changes..."}</span>
+                    </>
+                  ) : (
+                    <span>{lang === "rw" ? "Bika Impinduka (Save Changes)" : "Save Changes"}</span>
+                  )}
                 </button>
               </div>
             </form>

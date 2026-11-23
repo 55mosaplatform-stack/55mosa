@@ -97,7 +97,17 @@ export default function BusinessDetailPage({
         if (res.ok) {
           const data = await res.json();
           if (data.business) {
-            setBusiness(data.business);
+            // Deduplicate products defensively to prevent accidental repeats
+            const uniqueProducts: any[] = [];
+            const seenKeys = new Set<string>();
+            for (const p of data.business.products || []) {
+              const key = `${p.id}_${p.name?.trim().toLowerCase()}`;
+              if (!seenKeys.has(key)) {
+                seenKeys.add(key);
+                uniqueProducts.push(p);
+              }
+            }
+            setBusiness({ ...data.business, products: uniqueProducts });
             setReviews(data.business.reviews || []);
 
             // Intelligent Discovery: Fetch related businesses in the same category/sector
@@ -512,9 +522,18 @@ export default function BusinessDetailPage({
             <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-300">
               <MapPin className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>
-                {business.nearestLandmark
-                  ? `${business.nearestLandmark} • ${business.location?.cell || "Nyamirambo"}, ${business.location?.sector || "Nyamirambo"}`
-                  : `${business.location?.community || (business as any).cell || "Nyamirambo"}, ${business.location?.cell || (business as any).cell || "Nyamirambo"}, ${business.location?.sector || "Nyamirambo"}`}
+                {(() => {
+                  const landmark = business.nearestLandmark || business.streetName || business.location?.nearbyPlace;
+                  const locDetails = [
+                    business.location?.cell || (business as any).cell,
+                    business.location?.sector || (business as any).sector,
+                    business.location?.district || (business as any).district,
+                  ].filter((s) => s && s.trim() && s !== "Unspecified");
+                  if (landmark) {
+                    return locDetails.length > 0 ? `${landmark} • ${locDetails.join(", ")}` : landmark;
+                  }
+                  return locDetails.length > 0 ? locDetails.join(", ") : "Rwanda";
+                })()}
               </span>
               {business.location?.addressNote && !business.nearestLandmark && (
                 <span className="text-slate-400">({business.location.addressNote})</span>

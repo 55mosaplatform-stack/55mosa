@@ -328,8 +328,8 @@ export async function GET(request: Request) {
         .create({
           data: {
             query: search.trim(),
-            sector: sector || parsedNlp.matchedSector || "Nyamirambo",
-            cell: cell || parsedNlp.matchedCell || community || "Biryogo",
+            sector: sector || parsedNlp.matchedSector || null,
+            cell: cell || parsedNlp.matchedCell || community || null,
           },
         })
         .catch(() => {});
@@ -427,10 +427,10 @@ export async function POST(request: Request) {
       descriptionRw,
       phone,
       whatsapp,
-      cell = "Biryogo",
-      sector = "Nyamirambo",
-      district = "Nyarugenge",
-      province = "Kigali City",
+      cell = "Kamutwa",
+      sector = "Kacyiru",
+      district = "Gasabo",
+      province = "City of Kigali",
       addressNote,
       nearestLandmark,
       streetName,
@@ -439,8 +439,8 @@ export async function POST(request: Request) {
       locationSource: rawLocationSource,
       locationAccuracy: rawLocationAccuracy,
       locationVerificationStatus: rawLocationVerificationStatus,
-      latitude = -1.981,
-      longitude = 30.046,
+      latitude = -1.9365,
+      longitude = 30.0868,
       priceRange = "LOW",
       priceRangeMin,
       priceRangeMax,

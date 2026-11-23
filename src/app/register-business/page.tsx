@@ -261,16 +261,17 @@ export default function RegisterBusinessPage() {
 
   // Step 2: Location Data
   const [locationData, setLocationData] = useState<SmartLocationFormData>({
-    province: "Kigali City",
-    district: "Nyarugenge",
-    sector: "Nyamirambo",
-    cell: "Biryogo",
+    country: "Rwanda",
+    province: "City of Kigali",
+    district: "Gasabo",
+    sector: "Kacyiru",
+    cell: "Kamutwa",
     nearestLandmark: "",
     streetName: "",
     nearbyPlace: "",
     locationDescription: "",
-    latitude: -1.981,
-    longitude: 30.046,
+    latitude: -1.9365,
+    longitude: 30.0868,
     locationSource: "OWNER_REPORTED",
     locationVerificationStatus: "UNVERIFIED",
   });
@@ -362,10 +363,10 @@ export default function RegisterBusinessPage() {
     reader.readAsDataURL(file);
   };
 
-  const handleSaveItem = () => {
+  const handleSaveItem = (): boolean => {
     if (!itemDraft.name.trim()) {
       setItemError(lang === "rw" ? "Injiza izina ry'igicuruzwa cyangwa serivisi." : "Please enter the item or service name.");
-      return;
+      return false;
     }
 
     // MANDATORY CAPTION ENFORCEMENT FOR UPLOADS
@@ -375,7 +376,7 @@ export default function RegisterBusinessPage() {
           ? "Ugomba gushyiraho ibisobanuro (caption) by'ifoto cyangwa videwo mbere yo kubika."
           : "A media caption is strictly required when uploading or attaching an image, file, or video."
       );
-      return;
+      return false;
     }
 
     if (!itemDraft.contactForPrice && !itemDraft.price.trim() && itemDraft.priceType !== "RANGE") {
@@ -384,7 +385,7 @@ export default function RegisterBusinessPage() {
           ? "Injiza igiciro cyangwa uhitemo 'Baza Igiciro'."
           : "Please enter a price or select 'Contact for price'."
       );
-      return;
+      return false;
     }
 
     const newItem = {
@@ -431,6 +432,7 @@ export default function RegisterBusinessPage() {
       mediaCaption: "",
     });
     setItemError(null);
+    return true;
   };
 
   const handleEditItem = (index: number) => {
@@ -569,7 +571,15 @@ export default function RegisterBusinessPage() {
         );
         return false;
       }
-      handleSaveItem();
+      const saved = handleSaveItem();
+      if (!saved) {
+        setErrorMsg(
+          lang === "rw"
+            ? "Nyamuneka uzuza igiciro cyangwa uhitemo 'Baza Igiciro' ku kintu uri kwinjiza."
+            : "Please specify a price or select 'Contact for price' for the item being drafted."
+        );
+        return false;
+      }
     }
 
     // Verify all products have required captions if media is attached
@@ -652,12 +662,24 @@ export default function RegisterBusinessPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
+
     if (!isAllValid) {
-      setErrorMsg("Your application is incomplete. Please resolve missing required fields before completing registration.");
+      const missingItems = validationChecklist.filter((c) => !c.valid).map((c) => c.label);
+      setErrorMsg(
+        lang === "rw"
+          ? `Ubusabe ntiburuzura. Nyamuneka banza wuzuze: ${missingItems.join(", ")}`
+          : `Your application is incomplete. Please complete: ${missingItems.join(", ")}`
+      );
+      window.scrollTo({ top: 400, behavior: "smooth" });
       return;
     }
     if (!formData.certifyAccurate) {
-      setErrorMsg("Please certify that the submitted business information is accurate.");
+      setErrorMsg(
+        lang === "rw"
+          ? "Nyamuneka kanda ku kazu ko kwemeza ko amakuru watanze ari ukuri mbere yo kubika."
+          : "Please check the certification box below confirming that your business information is accurate."
+      );
       return;
     }
 
@@ -1345,13 +1367,25 @@ export default function RegisterBusinessPage() {
                 </div>
 
                 {/* Step 1 Actions */}
-                <div className="pt-4 flex justify-end">
+                <div className="pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-100">
+                  {errorMsg && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-bold flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>{errorMsg}</span>
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
-                      if (validateStep1()) setStep(2);
+                      if (validateStep1()) {
+                        setErrorMsg(null);
+                        setStep(2);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      } else {
+                        window.scrollTo({ top: 300, behavior: "smooth" });
+                      }
                     }}
-                    className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                    className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer self-end"
                   >
                     <span>{t.registration.continueToLocation}</span>
                     <ArrowRight className="w-4 h-4" />
@@ -1418,6 +1452,8 @@ export default function RegisterBusinessPage() {
                           setErrorMsg(null);
                           setStep(3);
                           window.scrollTo({ top: 0, behavior: "smooth" });
+                        } else {
+                          window.scrollTo({ top: 600, behavior: "smooth" });
                         }
                       }}
                       className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition-all flex items-center gap-2 cursor-pointer"
@@ -2019,6 +2055,14 @@ export default function RegisterBusinessPage() {
                   )}
                 </div>
 
+                {/* Step 3 Inline Validation Alert */}
+                {errorMsg && step === 3 && (
+                  <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2.5 shadow-xs">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span className="font-bold">{errorMsg}</span>
+                  </div>
+                )}
+
                 {/* Step 3 Actions */}
                 <div className="pt-4 flex items-center justify-between border-t border-slate-100">
                   <button
@@ -2261,6 +2305,14 @@ export default function RegisterBusinessPage() {
                     </label>
                   </div>
 
+                  {/* Step 4 Inline Validation Alert */}
+                  {errorMsg && step === 4 && (
+                    <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2.5 shadow-xs">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span className="font-bold">{errorMsg}</span>
+                    </div>
+                  )}
+
                   {/* Step 4 Actions */}
                   <div className="pt-4 flex items-center justify-between border-t border-slate-100">
                     <button
@@ -2274,7 +2326,7 @@ export default function RegisterBusinessPage() {
                     
                     <button
                       type="submit"
-                      disabled={submitting || !isAllValid || !formData.certifyAccurate}
+                      disabled={submitting}
                       className="px-8 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-lg hover:shadow-emerald-600/25 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {submitting ? (
