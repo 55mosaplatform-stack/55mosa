@@ -1516,6 +1516,36 @@ export default function OwnerDashboardPage() {
     }
   };
 
+  // Handle Set Cover Photo
+  const handleSetCoverPhoto = async (mediaId: string) => {
+    if (!business) return;
+    try {
+      const res = await fetch("/api/owner/media", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mediaId, isCover: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to set cover photo.");
+      }
+      setOwnerMediaList((prev) =>
+        prev.map((m) => ({
+          ...m,
+          isCover: m.id === mediaId,
+        }))
+      );
+      const chosen = ownerMediaList.find((m) => m.id === mediaId);
+      if (chosen) {
+        setBusiness((prev: any) => prev ? { ...prev, coverImage: chosen.url } : prev);
+      }
+      setSaveSuccessMsg(lang === "rw" ? "Ifoto y'ibanze yahinduwe neza." : "Cover photo updated successfully.");
+      setTimeout(() => setSaveSuccessMsg(""), 3000);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to set cover photo.");
+    }
+  };
+
   // Business Cover Management Handlers
   const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -5400,13 +5430,24 @@ export default function OwnerDashboardPage() {
                               {photo.caption}
                             </p>
                           )}
-                          <button
-                            onClick={() => handleDeleteMedia(photo.id)}
-                            className="self-end p-1.5 rounded-lg bg-red-600/90 hover:bg-red-700 text-white transition-colors cursor-pointer"
-                            title="Delete photo"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center gap-1.5 self-end">
+                            {!photo.isCover && (
+                              <button
+                                onClick={() => handleSetCoverPhoto(photo.id)}
+                                className="px-2 py-1 rounded-lg bg-emerald-600/90 hover:bg-emerald-700 text-white text-[10px] font-bold transition-colors cursor-pointer"
+                                title="Set as primary cover"
+                              >
+                                {lang === "rw" ? "Kora Ibanze" : "Make Cover"}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDeleteMedia(photo.id)}
+                              className="p-1.5 rounded-lg bg-red-600/90 hover:bg-red-700 text-white transition-colors cursor-pointer"
+                              title="Delete photo"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}

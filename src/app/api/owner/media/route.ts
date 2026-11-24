@@ -253,6 +253,127 @@ export async function POST(request: Request) {
 }
 
 /**
+ * PATCH /api/owner/media
+ * Updates an existing photo or video caption or sets/unsets it as the primary cover photo.
+ * Enforces ownership check, updates database atomically, records AuditLog, and revalidates cache.
+ */
+export async function PATCH(request: Request) {
+  const auth = await requireAuth([Role.BUSINESS_OWNER, Role.SUPER_ADMIN, Role.COMMUNITY_ADMIN]);
+  if (auth.error || !auth.user) {
+    return NextResponse.json({ error: auth.error || "Unauthorized" }, { status: auth.status || 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const { mediaId, caption, isCover } = body;
+
+    if (!mediaId) {
+      return NextResponse.json({ error: "mediaId is required" }, { status: 400 });
+    }
+
+    const media = await prisma.businessMedia.findUnique({
+      where: { id: mediaId },
+      include: { business: { select: { id: true, ownerId: true, name: true } } },
+    });
+
+    if (!media) {
+      return NextResponse.json({ error: "Media item not found" }, { status: 404 });
+    }
+
+    if (media.business.ownerId !== auth.user.id && auth.user.role !== Role.SUPER_ADMIN) {
+      return NextResponse.json({ error: "Forbidden: You do not own this business" }, { status: 403 });
+    }
+
+    const businessId = media.businessId;
+    const actorId = auth.user.id;
+
+    const updatedMedia = await prisma.$transaction(async (tx) => {
+      const dataToUpdate: any = {};
+
+      if (caption !== undefined) {
+        dataToUpdate.caption = typeof caption === "string" ? caption.trim() : null;
+      }
+
+      if (isCover !== undefined) {
+        dataToUpdate.isCover = Boolean(isCover);
+
+        if (Boolean(isCover)) {
+          // If setting this media as cover, clear cover on all other media items of this business
+          await tx.businessMedia.updateMany({
+            where: { businessId, isCover: true, id: { not: mediaId } },
+            data: { isCover: false },
+          });
+
+          // Also update business coverImage
+          await tx.business.update({
+            where: { id: businessId },
+            data: { coverImage: media.url },
+          });
+        } else {
+          // If unsetting this media as cover, check if business coverImage points to this url
+          const currentBiz = await tx.business.findUnique({
+            where: { id: businessId },
+            select: { coverImage: true },
+          });
+          if (currentBiz?.coverImage === media.url) {
+            const nextCover = await tx.businessMedia.findFirst({
+              where: { businessId, id: { not: mediaId }, mediaType: "IMAGE" },
+              orderBy: { createdAt: "desc" },
+            });
+            await tx.business.update({
+              where: { id: businessId },
+              data: { coverImage: nextCover ? nextCover.url : null },
+            });
+            if (nextCover) {
+              await tx.businessMedia.update({
+                where: { id: nextCover.id },
+                data: { isCover: true },
+              });
+            }
+          }
+        }
+      }
+
+      const m = await tx.businessMedia.update({
+        where: { id: mediaId },
+        data: dataToUpdate,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId,
+          action: "MEDIA_UPDATED",
+          entityType: "BUSINESS_MEDIA",
+          entityId: mediaId,
+          metadata: JSON.stringify({
+            businessId,
+            caption: m.caption,
+            isCover: m.isCover,
+            url: m.url,
+          }),
+        },
+      });
+
+      return m;
+    });
+
+    revalidatePath(`/business/${businessId}`);
+    revalidatePath("/explore");
+    revalidatePath("/admin");
+
+    calculateAndPersistBusinessHealth(businessId).catch(() => {});
+
+    return NextResponse.json({
+      success: true,
+      media: updatedMedia,
+    });
+  } catch (error) {
+    console.error("[Owner Media PATCH Error]:", error);
+    return NextResponse.json({ error: "Failed to update media" }, { status: 500 });
+  }
+}
+
+/**
  * DELETE /api/owner/media
  * Removes a photo or video from the business.
  */
@@ -264,7 +385,7 @@ export async function DELETE(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const mediaId = searchParams.get("id");
+    const mediaId = searchParams.get("id") || searchParams.get("mediaId");
 
     if (!mediaId) {
       return NextResponse.json({ error: "Media id is required" }, { status: 400 });

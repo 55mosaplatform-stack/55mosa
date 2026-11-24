@@ -4981,12 +4981,33 @@ export default function AdminPanelPage() {
                 </p>
               </div>
 
-              <button
-                onClick={() => setInspectingBizContent(null)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <Link
+                  href={`/business/${inspectingBizContent.business.id}`}
+                  target="_blank"
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Public View</span>
+                </Link>
+                <button
+                  onClick={() => {
+                    const b = inspectingBizContent.business;
+                    setEditingBiz(b);
+                    setIsEditModalOpen(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Edit Details</span>
+                </button>
+                <button
+                  onClick={() => setInspectingBizContent(null)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Short Showcase Videos */}
@@ -5306,6 +5327,38 @@ export default function AdminPanelPage() {
                         <span className="text-[10px] text-rose-600">{new Date(rep.createdAt).toLocaleDateString()}</span>
                       </div>
                       <p className="text-slate-700">{rep.details || "No details provided"}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Audit & Change History */}
+            {((inspectingBizContent.changeHistory && inspectingBizContent.changeHistory.length > 0) || (inspectingBizContent.business?.changeHistory && inspectingBizContent.business.changeHistory.length > 0)) && (
+              <div className="space-y-3 pt-4 border-t border-slate-100">
+                <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                  <History className="w-4 h-4 text-purple-600" />
+                  <span>Audit & Change History ({((inspectingBizContent.changeHistory || inspectingBizContent.business?.changeHistory) || []).length})</span>
+                </h4>
+                <div className="space-y-2 max-h-56 overflow-y-auto">
+                  {((inspectingBizContent.changeHistory || inspectingBizContent.business?.changeHistory) || []).map((ch: any) => (
+                    <div key={ch.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-900">{ch.action}</span>
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-700">
+                            {ch.source || "SYSTEM"}
+                          </span>
+                        </div>
+                        {ch.fieldChanged && (
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Field: <span className="font-semibold text-slate-700">{ch.fieldChanged}</span>
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-slate-400 whitespace-nowrap">
+                        {new Date(ch.createdAt).toLocaleString()}
+                      </span>
                     </div>
                   ))}
                 </div>
