@@ -29,12 +29,13 @@ async function main() {
       run: async () => {
         // Warm up connection pooler
         await prisma.$connect();
+        await prisma.$queryRaw`SELECT 1`; // Warm-up handshake
         const start = Date.now();
-        await prisma.$queryRaw`SELECT 1`;
+        await prisma.$queryRaw`SELECT 1`; // Timed query execution
         const latency = Date.now() - start;
         return {
-          passed: latency < 3500,
-          message: `Database connection verified with query latency of ${latency}ms (Cold start threshold: <3500ms)`,
+          passed: latency < 3000,
+          message: `Database connection verified with query latency of ${latency}ms (Threshold: <3000ms)`,
         };
       },
     },

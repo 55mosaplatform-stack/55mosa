@@ -274,6 +274,195 @@ export const GLOBAL_COUNTRY_CONFIGS: Record<string, CountryAddressConfig> = {
       postalOrVillage: "e.g. 2196, 8001",
     },
   },
+
+  Burundi: {
+    code: "BI",
+    name: "Burundi",
+    flag: "🇧🇮",
+    currency: "BIF",
+    defaultCenter: { lat: -3.3822, lng: 29.3644 }, // Bujumbura
+    defaultZoom: 14,
+    phonePrefix: "+257",
+    searchPlaceholder: "e.g. Rohero, near Marché Central, Boulevard de l'Uprona",
+    landmarkExample: "e.g. Marché Central, Monument de l'Unité, Near Place de l'Indépendance",
+    streetExample: "e.g. Boulevard de l'Uprona, Chaussée du Peuple Murundi",
+    fieldLabels: {
+      level1: "Province",
+      level2: "Commune / Ville",
+      level3: "Zone",
+      level4: "Colline / Quartier",
+      postalOrVillage: "Avenue / Rue",
+    },
+    levelPlaceholders: {
+      level1: "e.g. Bujumbura Mairie, Gitega, Ngozi",
+      level2: "e.g. Mukaza, Ntahangwa, Muha",
+      level3: "e.g. Rohero, Bwiza, Buyenzi, Ngagara",
+      level4: "e.g. Quartier 1, Quartier 2, Kiriri",
+      postalOrVillage: "e.g. Avenue de la Liberté",
+    },
+  },
+
+  "DR Congo": {
+    code: "CD",
+    name: "DR Congo",
+    flag: "🇨🇩",
+    currency: "USD",
+    defaultCenter: { lat: -1.6786, lng: 29.2319 }, // Goma (EAC border hub)
+    defaultZoom: 14,
+    phonePrefix: "+243",
+    searchPlaceholder: "e.g. Goma, near Rond-point BDGL, Avenue Kanyamuhanga",
+    landmarkExample: "e.g. Rond-point BDGL, Marché Birere, Port de Goma",
+    streetExample: "e.g. Avenue Kanyamuhanga, Boulevard de la Révolution",
+    fieldLabels: {
+      level1: "Province",
+      level2: "Ville / Territoire",
+      level3: "Commune",
+      level4: "Quartier",
+      postalOrVillage: "Avenue / Rue",
+    },
+    levelPlaceholders: {
+      level1: "e.g. Nord-Kivu, Sud-Kivu, Kinshasa",
+      level2: "e.g. Goma, Bukavu, Kinshasa",
+      level3: "e.g. Goma, Karisimbi, Ibanda, Gombe",
+      level4: "e.g. Himbi, Les Volcans, Ndosho, Katindo",
+      postalOrVillage: "e.g. Avenue du Lac",
+    },
+  },
+
+  "United Arab Emirates": {
+    code: "AE",
+    name: "United Arab Emirates",
+    flag: "🇦🇪",
+    currency: "AED",
+    defaultCenter: { lat: 25.2048, lng: 55.2708 }, // Dubai
+    defaultZoom: 13,
+    phonePrefix: "+971",
+    searchPlaceholder: "e.g. Business Bay, near Burj Khalifa, Sheikh Zayed Road",
+    landmarkExample: "e.g. Dubai Mall, Burj Khalifa, Deira Gold Souk",
+    streetExample: "e.g. Sheikh Zayed Road, Al Marsa Street",
+    fieldLabels: {
+      level1: "Emirate",
+      level2: "City / Area",
+      level3: "District / Sector",
+      level4: "Community / Neighborhood",
+      postalOrVillage: "Street / Makani No.",
+    },
+    levelPlaceholders: {
+      level1: "e.g. Dubai, Abu Dhabi, Sharjah",
+      level2: "e.g. Downtown Dubai, Deira, Bur Dubai, Marina",
+      level3: "e.g. Business Bay, Al Barsha, JLT",
+      level4: "e.g. Community 314, Springs 1",
+      postalOrVillage: "e.g. Building 12, Makani 12345 67890",
+    },
+  },
+
+  Canada: {
+    code: "CA",
+    name: "Canada",
+    flag: "🇨🇦",
+    currency: "CAD",
+    defaultCenter: { lat: 43.6532, lng: -79.3832 }, // Toronto
+    defaultZoom: 13,
+    phonePrefix: "+1",
+    searchPlaceholder: "e.g. Downtown Toronto, near Yonge-Dundas, King Street",
+    landmarkExample: "e.g. CN Tower, Eaton Centre, Union Station",
+    streetExample: "e.g. Yonge Street, Queen Street West, King Street",
+    fieldLabels: {
+      level1: "Province / Territory",
+      level2: "City / Municipality",
+      level3: "Borough / District",
+      level4: "Neighborhood",
+      postalOrVillage: "Postal Code",
+    },
+    levelPlaceholders: {
+      level1: "e.g. Ontario, Quebec, British Columbia, Alberta",
+      level2: "e.g. Toronto, Montreal, Vancouver, Calgary, Ottawa",
+      level3: "e.g. Old Toronto, Ville-Marie, North York",
+      level4: "e.g. Entertainment District, Plateau, Gastown",
+      postalOrVillage: "e.g. M5V 2H1, H3A 0G4",
+    },
+  },
+
+  France: {
+    code: "FR",
+    name: "France",
+    flag: "🇫🇷",
+    currency: "EUR",
+    defaultCenter: { lat: 48.8566, lng: 2.3522 }, // Paris
+    defaultZoom: 13,
+    phonePrefix: "+33",
+    searchPlaceholder: "e.g. Paris 8e, near Champs-Élysées, Boulevard Haussmann",
+    landmarkExample: "e.g. Opéra Garnier, Gare de Lyon, Place de la République",
+    streetExample: "e.g. Boulevard Haussmann, Rue de Rivoli, Avenue Montaigne",
+    fieldLabels: {
+      level1: "Région",
+      level2: "Département / Ville",
+      level3: "Arrondissement / Commune",
+      level4: "Quartier",
+      postalOrVillage: "Code Postal",
+    },
+    levelPlaceholders: {
+      level1: "e.g. Île-de-France, Auvergne-Rhône-Alpes",
+      level2: "e.g. Paris, Lyon, Marseille, Bordeaux, Lille",
+      level3: "e.g. Paris 1er, 8e Arrondissement, Villeurbanne",
+      level4: "e.g. Le Marais, Saint-Germain-des-Prés, Part-Dieu",
+      postalOrVillage: "e.g. 75008, 69003",
+    },
+  },
+
+  Germany: {
+    code: "DE",
+    name: "Germany",
+    flag: "🇩🇪",
+    currency: "EUR",
+    defaultCenter: { lat: 52.5200, lng: 13.4050 }, // Berlin
+    defaultZoom: 13,
+    phonePrefix: "+49",
+    searchPlaceholder: "e.g. Berlin Mitte, near Alexanderplatz, Friedrichstraße",
+    landmarkExample: "e.g. Alexanderplatz, Brandenburger Tor, Hauptbahnhof",
+    streetExample: "e.g. Friedrichstraße, Kurfürstendamm, Unter den Linden",
+    fieldLabels: {
+      level1: "Bundesland (State)",
+      level2: "Stadt / Landkreis",
+      level3: "Stadtteil / Bezirk",
+      level4: "Ortsteil / Kiez",
+      postalOrVillage: "Postleitzahl (PLZ)",
+    },
+    levelPlaceholders: {
+      level1: "e.g. Berlin, Bayern, Nordrhein-Westfalen, Hessen",
+      level2: "e.g. Berlin, München, Frankfurt am Main, Hamburg, Köln",
+      level3: "e.g. Mitte, Charlottenburg, Schwabing, Altstadt",
+      level4: "e.g. Kreuzberg, Prenzlauer Berg, Bogenhausen",
+      postalOrVillage: "e.g. 10115, 80331",
+    },
+  },
+
+  India: {
+    code: "IN",
+    name: "India",
+    flag: "🇮🇳",
+    currency: "INR",
+    defaultCenter: { lat: 28.6139, lng: 77.2090 }, // New Delhi
+    defaultZoom: 13,
+    phonePrefix: "+91",
+    searchPlaceholder: "e.g. Connaught Place, near Metro Station, Barakhamba Road",
+    landmarkExample: "e.g. Connaught Place, India Gate, Bandra Kurla Complex (BKC)",
+    streetExample: "e.g. Mahatma Gandhi Road, Brigade Road, Park Street",
+    fieldLabels: {
+      level1: "State / UT",
+      level2: "District / City",
+      level3: "Taluk / Tehsil / Zone",
+      level4: "Locality / Ward",
+      postalOrVillage: "PIN Code",
+    },
+    levelPlaceholders: {
+      level1: "e.g. Delhi, Maharashtra, Karnataka, Tamil Nadu, Telangana",
+      level2: "e.g. New Delhi, Mumbai, Bengaluru, Chennai, Hyderabad",
+      level3: "e.g. South Delhi, Mumbai Suburban, Bangalore Urban",
+      level4: "e.g. Connaught Place, Bandra West, Indiranagar, Koramangala",
+      postalOrVillage: "e.g. 110001, 400050, 560038",
+    },
+  },
 };
 
 export const DEFAULT_INTERNATIONAL_CONFIG: CountryAddressConfig = {

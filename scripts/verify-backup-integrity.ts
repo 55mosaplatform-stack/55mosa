@@ -84,10 +84,8 @@ async function main() {
   const businesses = JSON.parse(fs.readFileSync(bizPath, "utf-8"));
 
   const requiredPilots = [
-    "Salon Nova Style Biryogo",
-    "Atelier de Couture Umwiza",
-    "Cosmos Tech & Phone Clinic",
-    "Kivugiza Fresh Milk & Chapati Corner",
+    "JANVIER RETAIL SHOP",
+    "Ishyuka Arts",
   ];
 
   const missingPilots = requiredPilots.filter(
@@ -98,7 +96,7 @@ async function main() {
   console.log("INTEGRITY VERIFICATION RESULTS");
   console.log(`All Table SHA-256 Cryptographic Signatures: ${allHashesValid ? "VERIFIED (100% MATCH)" : "FAILED"}`);
   console.log(`Total Verified Database Records:            ${totalVerifiedRows}`);
-  console.log(`Foundation Pilot Enterprises Preserved:     ${missingPilots.length === 0 ? "YES (All 4 Active)" : `MISSING: ${missingPilots.join(", ")}`}`);
+  console.log(`Foundation Pilot Enterprises Preserved:     ${missingPilots.length === 0 ? `YES (All ${requiredPilots.length} Active)` : `MISSING: ${missingPilots.join(", ")}`}`);
   console.log("------------------------------------------------------------------\n");
 
   if (!allHashesValid || missingPilots.length > 0) {

@@ -22,14 +22,21 @@ import { getCountryConfig, GLOBAL_COUNTRY_CONFIGS } from "@/lib/country-address-
 
 export const SUPPORTED_COUNTRIES = [
   { code: "RW", name: "Rwanda", flag: "🇷🇼" },
-  { code: "KE", name: "Kenya", flag: "🇰🇪" },
+  { code: "BI", name: "Burundi", flag: "🇧🇮" },
+  { code: "CD", name: "DR Congo", flag: "🇨🇩" },
   { code: "UG", name: "Uganda", flag: "🇺🇬" },
+  { code: "KE", name: "Kenya", flag: "🇰🇪" },
   { code: "TZ", name: "Tanzania", flag: "🇹🇿" },
   { code: "NG", name: "Nigeria", flag: "🇳🇬" },
   { code: "GH", name: "Ghana", flag: "🇬🇭" },
   { code: "ZA", name: "South Africa", flag: "🇿🇦" },
+  { code: "AE", name: "United Arab Emirates", flag: "🇦🇪" },
   { code: "GB", name: "United Kingdom", flag: "🇬🇧" },
+  { code: "FR", name: "France", flag: "🇫🇷" },
+  { code: "DE", name: "Germany", flag: "🇩🇪" },
   { code: "US", name: "United States", flag: "🇺🇸" },
+  { code: "CA", name: "Canada", flag: "🇨🇦" },
+  { code: "IN", name: "India", flag: "🇮🇳" },
   { code: "OTHER", name: "Other / International", flag: "🌍" },
 ];
 

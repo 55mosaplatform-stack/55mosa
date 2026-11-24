@@ -103,10 +103,8 @@ async function main() {
   };
 
   const pilotNames = [
-    "Salon Nova Style Biryogo",
-    "Atelier de Couture Umwiza",
-    "Cosmos Tech & Phone Clinic",
-    "Kivugiza Fresh Milk & Chapati Corner",
+    "JANVIER RETAIL SHOP",
+    "Ishyuka Arts",
   ];
 
   for (const table of tables) {
@@ -151,7 +149,7 @@ async function main() {
   console.log("\n------------------------------------------------------------------");
   console.log("BACKUP COMPLETED SUCCESSFULLY");
   console.log("Total Records Backed Up:", manifest.totalRows);
-  console.log("Foundation Pilots Verified Intact:", manifest.foundationPilotsIntact ? "YES (4/4)" : "NO");
+  console.log("Foundation Pilots Verified Intact:", manifest.foundationPilotsIntact ? `YES (${pilotNames.length}/${pilotNames.length})` : "NO");
   console.log("Integrity Manifest:", manifestPath);
   console.log("------------------------------------------------------------------\n");
 
