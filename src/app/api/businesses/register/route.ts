@@ -206,6 +206,15 @@ export async function POST(request: Request) {
       computedAddressNote = computedAddressNote ? `${prefix} ${computedAddressNote}` : prefix;
     }
 
+    if (resolvedLat === null || resolvedLng === null) {
+      return NextResponse.json(
+        { error: "Business location coordinates are required. Please confirm your location on the map." },
+        { status: 400 }
+      );
+    }
+    const finalLat: number = resolvedLat;
+    const finalLng: number = resolvedLng;
+
     // 3-7. Atomic Transaction: User Account + Business + Products + AuditLog
     const { user, business } = await prisma.$transaction(async (tx) => {
       let u = await tx.user.findUnique({
@@ -277,8 +286,8 @@ export async function POST(request: Request) {
           locationSource: locSource,
           locationAccuracy: hasGps ? accuracy : null,
           locationVerificationStatus: locVerification,
-          latitude: resolvedLat,
-          longitude: resolvedLng,
+          latitude: finalLat,
+          longitude: finalLng,
           verificationStatus: "UNVERIFIED",
           status: "PENDING",
           dataStatus: "RESEARCHED",
