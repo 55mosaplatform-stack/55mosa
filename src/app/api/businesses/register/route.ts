@@ -115,6 +115,35 @@ export async function POST(request: Request) {
     const hasCoordinates = typeof latitude === "number" && typeof longitude === "number" && !isNaN(latitude) && !isNaN(longitude);
     const coordinatesConfirmed = Boolean(body.hasConfirmedCoordinates);
     const hasGps = hasCoordinates && typeof locationAccuracy === "number";
+
+    // Strict validation: Coordinates must be confirmed by the user (pin adjustment, geocoding, or GPS)
+    // Country map viewport viewing hubs must never be saved as unconfirmed business locations.
+    const regCountry = body.country && typeof body.country === "string" ? body.country.trim() : "Rwanda";
+    const countryConfig = getCountryConfig(regCountry);
+    const isRw = countryConfig.code === "RW";
+
+    const isCountryHubCoord = hasCoordinates &&
+      Math.abs(Number(latitude) - countryConfig.defaultCenter.lat) < 0.0001 &&
+      Math.abs(Number(longitude) - countryConfig.defaultCenter.lng) < 0.0001;
+
+    if (!coordinatesConfirmed && !hasGps) {
+      return NextResponse.json(
+        {
+          error: "Business location coordinates must be confirmed on the map or by address description. A country map viewing position cannot be saved as a business location.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (isCountryHubCoord && !body.explicitHubConfirmation) {
+      return NextResponse.json(
+        {
+          error: "Coordinates match a country map viewing hub. Please select your specific business street, building, or landmark location.",
+        },
+        { status: 400 }
+      );
+    }
+
     const locSource: LocationSource = hasGps ? LocationSource.GPS_DEVICE : (coordinatesConfirmed ? LocationSource.MAP_SELECTION : LocationSource.OWNER_REPORTED);
     const locVerification: LocationVerificationStatus = (hasGps || coordinatesConfirmed) ? LocationVerificationStatus.AGENT_CAPTURED : LocationVerificationStatus.UNVERIFIED;
     const accuracy = hasGps ? Number(locationAccuracy) : null;
@@ -168,16 +197,6 @@ export async function POST(request: Request) {
       if (dbCell) {
         resolvedCellId = dbCell.id;
       }
-    }
-
-    const regCountry = body.country && typeof body.country === "string" ? body.country.trim() : "Rwanda";
-    const countryConfig = getCountryConfig(regCountry);
-    const isRw = countryConfig.code === "RW";
-
-    // Country-aware center fallback if coordinates were not provided at all
-    if (resolvedLat === null || resolvedLng === null) {
-      resolvedLat = countryConfig.defaultCenter.lat;
-      resolvedLng = countryConfig.defaultCenter.lng;
     }
 
     const regProvince = province && typeof province === "string" ? province.trim() : null;
