@@ -1,4 +1,5 @@
 import { getCountryConfig, GLOBAL_COUNTRY_CONFIGS } from "./country-address-config";
+import { haversineDistance } from "./location-quality";
 
 /**
  * MOSA Rwanda & Global Geocoding Intelligence & Ground Landmark Resolution Engine
@@ -702,3 +703,126 @@ export async function interpretRwandaLocationDescription(
 ): Promise<GeocodingResult> {
   return interpretLocationDescription(description, { ...geoContext, country: "Rwanda" });
 }
+
+export interface ReverseGeocodeResult {
+  country: string;
+  countryCode: string;
+  city: string;
+  locality: string;
+  displayLabel: string;
+  latitude: number;
+  longitude: number;
+  source: "google" | "geodesic_hubs";
+}
+
+/**
+ * Reverse Geocode Coordinates to Country, City, and Locality.
+ * Uses Google Geocoding API if available, falling back to geodesic hub proximity matching.
+ */
+export async function reverseGeocodeCoords(
+  lat: number,
+  lng: number
+): Promise<ReverseGeocodeResult> {
+  const apiKey =
+    process.env.GOOGLE_MAPS_API_KEY ||
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+  if (apiKey) {
+    try {
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === "OK" && data.results && data.results.length > 0) {
+          const first = data.results[0];
+          let country = "";
+          let countryCode = "";
+          let city = "";
+          let locality = "";
+
+          for (const comp of first.address_components) {
+            if (comp.types.includes("country")) {
+              country = comp.long_name;
+              countryCode = comp.short_name;
+            }
+            if (comp.types.includes("locality")) {
+              city = comp.long_name;
+              locality = comp.long_name;
+            }
+            if (!city && comp.types.includes("administrative_area_level_2")) {
+              city = comp.long_name;
+            }
+            if (!locality && comp.types.includes("sublocality")) {
+              locality = comp.long_name;
+            }
+          }
+
+          if (country) {
+            return {
+              country,
+              countryCode: countryCode || "OTHER",
+              city: city || locality || country,
+              locality: locality || city || country,
+              displayLabel: `${city || locality || country}, ${country}`,
+              latitude: lat,
+              longitude: lng,
+              source: "google",
+            };
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[Reverse Geocode] Google reverse geocoding fallback triggered:", e);
+    }
+  }
+
+  // Fallback: geodesic proximity matching to known country and city hubs
+  let closestCountry = GLOBAL_COUNTRY_CONFIGS.Rwanda;
+  let minDistance = Infinity;
+
+  for (const config of Object.values(GLOBAL_COUNTRY_CONFIGS)) {
+    const dist = haversineDistance(lat, lng, config.defaultCenter.lat, config.defaultCenter.lng);
+    if (dist < minDistance) {
+      minDistance = dist;
+      closestCountry = config;
+    }
+  }
+
+  const capitalCities: Record<string, string> = {
+    RW: "Kigali",
+    UG: "Kampala",
+    KE: "Nairobi",
+    TZ: "Dar es Salaam",
+    DE: "Berlin",
+    GB: "London",
+    US: "New York",
+    FR: "Paris",
+    CA: "Toronto",
+    ZA: "Johannesburg",
+    NG: "Lagos",
+    GH: "Accra",
+    BI: "Bujumbura",
+    CD: "Goma",
+    AE: "Dubai",
+    IN: "New Delhi",
+  };
+
+  const city = capitalCities[closestCountry.code] || closestCountry.name;
+
+  return {
+    country: closestCountry.name,
+    countryCode: closestCountry.code,
+    city,
+    locality: city,
+    displayLabel: `${city}, ${closestCountry.name}`,
+    latitude: lat,
+    longitude: lng,
+    source: "geodesic_hubs",
+  };
+}
+
+export function calculateHaversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  return haversineDistance(lat1, lon1, lat2, lon2) / 1000;
+}
+
+export { haversineDistance };

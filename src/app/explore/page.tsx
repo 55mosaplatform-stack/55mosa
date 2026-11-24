@@ -26,7 +26,19 @@ import {
 
 export default function ExplorePage() {
   const { lang, t } = useLanguage();
-  const { currentSector, currentCell, currentLocalArea, displayLabel, openSelector, setSector, setCell } = useLocation();
+  const { 
+    currentCountry, 
+    currentCity, 
+    currentSector, 
+    currentCell, 
+    currentLocalArea, 
+    userCoords,
+    detectionMethod,
+    displayLabel, 
+    openSelector, 
+    setSector, 
+    setCell 
+  } = useLocation();
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedDataStatus, setSelectedDataStatus] = useState<"all" | "VERIFIED" | "DEMO">("all");
@@ -60,6 +72,12 @@ export default function ExplorePage() {
       try {
         const params = new URLSearchParams();
         if (selectedCategory !== "all") params.set("category", selectedCategory);
+        if (currentCountry) params.set("userCountry", currentCountry);
+        if (currentCity && currentCity !== "Worldwide") params.set("userCity", currentCity);
+        if (userCoords?.lat && userCoords?.lng) {
+          params.set("lat", userCoords.lat.toString());
+          params.set("lng", userCoords.lng.toString());
+        }
         if (currentSector && currentSector !== "all") params.set("sector", currentSector);
         if (currentCell && currentCell !== "all") params.set("cell", currentCell);
         if (selectedDataStatus !== "all") params.set("dataStatus", selectedDataStatus);
@@ -76,7 +94,10 @@ export default function ExplorePage() {
             return;
           } else if (currentSector && currentSector !== "all") {
             // Resilient Fallback: If filtered sector has no businesses yet, fetch all registered businesses
-            const fallbackRes = await fetch("/api/businesses");
+            const fallbackParams = new URLSearchParams();
+            if (currentCountry) fallbackParams.set("userCountry", currentCountry);
+            if (currentCity && currentCity !== "Worldwide") fallbackParams.set("userCity", currentCity);
+            const fallbackRes = await fetch(`/api/businesses?${fallbackParams.toString()}`);
             if (fallbackRes.ok) {
               const fallbackData = await fallbackRes.json();
               if (fallbackData.businesses && fallbackData.businesses.length > 0) {
@@ -95,7 +116,7 @@ export default function ExplorePage() {
       setBusinesses([]);
     }
     loadBusinesses();
-  }, [selectedCategory, currentSector, currentCell, selectedDataStatus, opportunitiesOnly]);
+  }, [selectedCategory, currentCountry, currentCity, userCoords?.lat, userCoords?.lng, currentSector, currentCell, selectedDataStatus, opportunitiesOnly]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14 space-y-8">

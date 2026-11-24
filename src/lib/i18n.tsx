@@ -53,17 +53,17 @@ const dictionaries: Record<Language, typeof en> = {
   sw: createDictionaryWithFallback(sw, en),
 };
 
-const defaultTr = (translations: TranslationsRecord) => translations.rw;
+const defaultTr = (translations: TranslationsRecord) => translations.en || translations.rw;
 
 const LanguageContext = createContext<LanguageContextType>({
-  lang: "rw",
+  lang: "en",
   setLang: () => {},
-  t: dictionaries.rw,
+  t: dictionaries.en,
   tr: defaultTr,
 });
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [lang, setLangState] = useState<Language>("rw");
+  const [lang, setLangState] = useState<Language>("en");
 
   useEffect(() => {
     try {
@@ -99,13 +99,14 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   };
 
   const tr = (translations: TranslationsRecord): string => {
+    if (lang === "en") return translations.en || translations.rw;
     if (lang === "rw") return translations.rw;
     if (lang === "fr") return translations.fr || translations.en;
     if (lang === "sw") return translations.sw || translations.en;
     return translations.en;
   };
 
-  const t = dictionaries[lang] || dictionaries.rw;
+  const t = dictionaries[lang] || dictionaries.en;
 
   return (
     <LanguageContext.Provider value={{ lang, setLang, t, tr }}>

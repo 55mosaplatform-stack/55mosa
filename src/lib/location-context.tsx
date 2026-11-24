@@ -180,23 +180,37 @@ export const DEFAULT_COMMUNITIES: CommunityOption[] = [
   },
 ];
 
-interface LocationState {
+export interface LocationState {
+  currentCountry: string;
+  currentCountryCode: string;
+  currentCity: string;
   currentSector: string;
   currentCell: string | null;
   currentLocalArea: string | null;
   currentDistrict: string;
   currentProvince: string;
+  userCoords: { lat: number; lng: number } | null;
+  detectionMethod: "IP" | "GPS" | "MANUAL" | "DEFAULT";
+  isLocating: boolean;
+  gpsPermissionStatus: "prompt" | "granted" | "denied" | "unsupported";
   isSelectorOpen: boolean;
   displayLabel: string;
+  requestGpsLocation: () => Promise<boolean>;
+  setCountry: (countryName: string, city?: string) => void;
   setSector: (sector: string, district?: string, province?: string) => void;
   setCell: (cell: string | null) => void;
   setLocalArea: (localArea: string | null) => void;
   setFullLocation: (options: {
-    sector: string;
+    country?: string;
+    countryCode?: string;
+    city?: string;
+    sector?: string;
     district?: string;
     province?: string;
     cell?: string | null;
     localArea?: string | null;
+    coords?: { lat: number; lng: number } | null;
+    method?: "IP" | "GPS" | "MANUAL";
   }) => void;
   resetLocation: () => void;
   openSelector: () => void;
@@ -208,53 +222,168 @@ const LocationContext = createContext<LocationState | undefined>(undefined);
 const STORAGE_KEY = "mosa_user_community";
 
 export function LocationProvider({ children }: { children: React.ReactNode }) {
-  // Default to Worldwide ("all") so all verified businesses appear by default globally
+  const [currentCountry, setCurrentCountry] = useState<string>("Rwanda");
+  const [currentCountryCode, setCurrentCountryCode] = useState<string>("RW");
+  const [currentCity, setCurrentCity] = useState<string>("Kigali");
   const [currentSector, setCurrentSector] = useState<string>("all");
   const [currentCell, setCurrentCell] = useState<string | null>(null);
   const [currentLocalArea, setCurrentLocalArea] = useState<string | null>(null);
   const [currentDistrict, setCurrentDistrict] = useState<string>("Worldwide");
   const [currentProvince, setCurrentProvince] = useState<string>("Worldwide");
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [detectionMethod, setDetectionMethod] = useState<"IP" | "GPS" | "MANUAL" | "DEFAULT">("DEFAULT");
+  const [isLocating, setIsLocating] = useState<boolean>(false);
+  const [gpsPermissionStatus, setGpsPermissionStatus] = useState<"prompt" | "granted" | "denied" | "unsupported">("prompt");
   const [isSelectorOpen, setIsSelectorOpen] = useState<boolean>(false);
+  const [customLabel, setCustomLabel] = useState<string | null>(null);
 
-  // Initialize from localStorage if available
+  // Initialize: Load manual preference if saved, or automatically detect visitor location via IP
   useEffect(() => {
+    let hasSavedManual = false;
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Only load if explicitly chosen and not the legacy "Kacyiru" default
-        if (parsed.sector && parsed.sector !== "all" && parsed.sector !== "Kacyiru") {
-          setCurrentSector(parsed.sector);
+        if (parsed.method === "MANUAL" || parsed.isExplicit) {
+          hasSavedManual = true;
+          if (parsed.country) setCurrentCountry(parsed.country);
+          if (parsed.countryCode) setCurrentCountryCode(parsed.countryCode);
+          if (parsed.city) setCurrentCity(parsed.city);
+          if (parsed.sector) setCurrentSector(parsed.sector);
           if (parsed.cell !== undefined) setCurrentCell(parsed.cell);
           if (parsed.localArea !== undefined) setCurrentLocalArea(parsed.localArea);
           if (parsed.district) setCurrentDistrict(parsed.district);
           if (parsed.province) setCurrentProvince(parsed.province);
-        } else {
-          // Default to all businesses globally
-          setCurrentSector("all");
-          setCurrentCell(null);
-          setCurrentLocalArea(null);
-          setCurrentDistrict("Worldwide");
-          setCurrentProvince("Worldwide");
+          if (parsed.coords) setUserCoords(parsed.coords);
+          if (parsed.label) setCustomLabel(parsed.label);
+          setDetectionMethod("MANUAL");
         }
       }
-    } catch {
-      // Ignore parse errors
+    } catch {}
+
+    // If no manual preference exists, trigger automatic IP-based detection
+    if (!hasSavedManual) {
+      fetch("/api/geo/detect")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success) {
+            setCurrentCountry(data.country || "Rwanda");
+            setCurrentCountryCode(data.countryCode || "RW");
+            setCurrentCity(data.city || "Kigali");
+            setCurrentProvince(data.region || data.country || "Rwanda");
+            setCurrentDistrict(data.city || "Worldwide");
+            if (data.latitude && data.longitude) {
+              setUserCoords({ lat: data.latitude, lng: data.longitude });
+            }
+            setDetectionMethod("IP");
+            setCustomLabel(data.displayLabel || `${data.city}, ${data.country}`);
+          }
+        })
+        .catch((err) => {
+          console.warn("[LocationProvider] IP geolocation detection fallback:", err);
+        });
     }
   }, []);
 
-  const persist = (data: {
-    sector: string;
-    cell: string | null;
-    localArea: string | null;
-    district: string;
-    province: string;
-  }) => {
+  const persist = (data: any) => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch {
-      // Ignore storage errors
+      // Also write cookie for SSR
+      document.cookie = `mosa_location=${encodeURIComponent(JSON.stringify({
+        country: data.country,
+        city: data.city,
+        sector: data.sector
+      }))}; path=/; max-age=604800; SameSite=Lax`;
+    } catch {}
+  };
+
+  const requestGpsLocation = async (): Promise<boolean> => {
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      setGpsPermissionStatus("unsupported");
+      return false;
     }
+
+    setIsLocating(true);
+
+    return new Promise<boolean>((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          setUserCoords({ lat, lng });
+          setGpsPermissionStatus("granted");
+          setDetectionMethod("GPS");
+
+          try {
+            // Reverse geocode to city and country
+            const res = await fetch(`/api/geo/geocode?lat=${lat}&lng=${lng}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.success && data.result) {
+                const r = data.result;
+                setCurrentCountry(r.country);
+                setCurrentCountryCode(r.countryCode);
+                setCurrentCity(r.city || r.locality);
+                setCurrentSector(r.locality || r.city || "all");
+                setCustomLabel(r.displayLabel || `${r.city}, ${r.country}`);
+
+                persist({
+                  country: r.country,
+                  countryCode: r.countryCode,
+                  city: r.city,
+                  sector: r.locality || r.city,
+                  district: r.city,
+                  province: r.country,
+                  coords: { lat, lng },
+                  method: "GPS",
+                  label: r.displayLabel,
+                  isExplicit: true,
+                });
+              }
+            }
+          } catch (e) {
+            console.warn("[LocationProvider] Reverse geocoding failed:", e);
+          } finally {
+            setIsLocating(false);
+            resolve(true);
+          }
+        },
+        (error) => {
+          console.warn("[LocationProvider] GPS permission denied or unavailable:", error.message);
+          setGpsPermissionStatus("denied");
+          setIsLocating(false);
+          // Graceful fallback: do NOT block discovery, keep IP or default
+          resolve(false);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+      );
+    });
+  };
+
+  const setCountry = (countryName: string, city?: string) => {
+    const finalCity = city || "All Cities";
+    setCurrentCountry(countryName);
+    setCurrentCity(finalCity);
+    setCurrentSector("all");
+    setCurrentCell(null);
+    setCurrentLocalArea(null);
+    setCurrentDistrict(finalCity);
+    setCurrentProvince(countryName);
+    setDetectionMethod("MANUAL");
+    const label = `${finalCity}, ${countryName}`;
+    setCustomLabel(label);
+    persist({
+      country: countryName,
+      city: finalCity,
+      sector: "all",
+      cell: null,
+      localArea: null,
+      district: finalCity,
+      province: countryName,
+      method: "MANUAL",
+      label,
+      isExplicit: true,
+    });
   };
 
   const setSector = (sector: string, district?: string, province?: string) => {
@@ -265,71 +394,170 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     setCurrentLocalArea(null);
     setCurrentDistrict(d);
     setCurrentProvince(p);
-    persist({ sector, cell: null, localArea: null, district: d, province: p });
+    setDetectionMethod("MANUAL");
+    setCustomLabel(`${sector}, ${d}`);
+    persist({
+      country: currentCountry,
+      city: currentCity,
+      sector,
+      cell: null,
+      localArea: null,
+      district: d,
+      province: p,
+      method: "MANUAL",
+      label: `${sector}, ${d}`,
+      isExplicit: true,
+    });
   };
 
   const setCell = (cell: string | null) => {
     setCurrentCell(cell);
-    persist({ sector: currentSector, cell, localArea: currentLocalArea, district: currentDistrict, province: currentProvince });
+    persist({
+      country: currentCountry,
+      city: currentCity,
+      sector: currentSector,
+      cell,
+      localArea: currentLocalArea,
+      district: currentDistrict,
+      province: currentProvince,
+      method: "MANUAL",
+      isExplicit: true,
+    });
   };
 
   const setLocalArea = (localArea: string | null) => {
     setCurrentLocalArea(localArea);
-    persist({ sector: currentSector, cell: currentCell, localArea, district: currentDistrict, province: currentProvince });
+    persist({
+      country: currentCountry,
+      city: currentCity,
+      sector: currentSector,
+      cell: currentCell,
+      localArea,
+      district: currentDistrict,
+      province: currentProvince,
+      method: "MANUAL",
+      isExplicit: true,
+    });
   };
 
   const setFullLocation = (options: {
-    sector: string;
+    country?: string;
+    countryCode?: string;
+    city?: string;
+    sector?: string;
     district?: string;
     province?: string;
     cell?: string | null;
     localArea?: string | null;
+    coords?: { lat: number; lng: number } | null;
+    method?: "IP" | "GPS" | "MANUAL";
   }) => {
-    const d = options.district || (options.sector === "Kacyiru" ? "Gasabo" : options.sector === "Nyamirambo" ? "Nyarugenge" : currentDistrict);
-    const p = options.province || (d === "Gasabo" || d === "Nyarugenge" ? "Kigali City" : currentProvince);
-    setCurrentSector(options.sector);
+    const c = options.country || currentCountry;
+    const cc = options.countryCode || currentCountryCode;
+    const city = options.city || currentCity;
+    const sec = options.sector || currentSector;
+    const d = options.district || currentDistrict;
+    const p = options.province || currentProvince;
+    const method = options.method || "MANUAL";
+
+    setCurrentCountry(c);
+    setCurrentCountryCode(cc);
+    setCurrentCity(city);
+    setCurrentSector(sec);
     setCurrentDistrict(d);
     setCurrentProvince(p);
     setCurrentCell(options.cell || null);
     setCurrentLocalArea(options.localArea || null);
+    if (options.coords) setUserCoords(options.coords);
+    setDetectionMethod(method);
+
+    let label = `${city}, ${c}`;
+    if (options.localArea) {
+      label = `${options.localArea}, ${sec}`;
+    } else if (options.cell) {
+      label = `${options.cell}, ${sec}`;
+    } else if (sec && sec !== "all") {
+      label = `${sec}, ${d}`;
+    }
+    setCustomLabel(label);
+
     persist({
-      sector: options.sector,
+      country: c,
+      countryCode: cc,
+      city,
+      sector: sec,
       cell: options.cell || null,
       localArea: options.localArea || null,
       district: d,
       province: p,
+      coords: options.coords || null,
+      method,
+      label,
+      isExplicit: true,
     });
   };
 
   const resetLocation = () => {
+    setCurrentCountry("Worldwide");
+    setCurrentCountryCode("ALL");
+    setCurrentCity("Worldwide");
     setCurrentSector("all");
     setCurrentCell(null);
     setCurrentLocalArea(null);
     setCurrentDistrict("Worldwide");
     setCurrentProvince("Worldwide");
-    persist({ sector: "all", cell: null, localArea: null, district: "Worldwide", province: "Worldwide" });
+    setUserCoords(null);
+    setDetectionMethod("MANUAL");
+    setCustomLabel("Worldwide (All Locations)");
+    persist({
+      country: "Worldwide",
+      countryCode: "ALL",
+      city: "Worldwide",
+      sector: "all",
+      cell: null,
+      localArea: null,
+      district: "Worldwide",
+      province: "Worldwide",
+      coords: null,
+      method: "MANUAL",
+      label: "Worldwide (All Locations)",
+      isExplicit: true,
+    });
   };
 
   // Build human friendly display label
-  let displayLabel = "Worldwide (All Locations)";
-  if (currentLocalArea) {
-    displayLabel = `${currentLocalArea}, ${currentSector}`;
-  } else if (currentCell) {
-    displayLabel = `${currentCell}, ${currentSector}`;
-  } else if (currentSector && currentSector !== "all") {
-    displayLabel = `${currentSector}, ${currentDistrict}`;
+  let displayLabel = customLabel || "Worldwide (All Locations)";
+  if (!customLabel) {
+    if (currentLocalArea) {
+      displayLabel = `${currentLocalArea}, ${currentSector}`;
+    } else if (currentCell) {
+      displayLabel = `${currentCell}, ${currentSector}`;
+    } else if (currentSector && currentSector !== "all") {
+      displayLabel = `${currentSector}, ${currentDistrict}`;
+    } else if (currentCity && currentCity !== "Worldwide") {
+      displayLabel = `${currentCity}, ${currentCountry}`;
+    }
   }
 
   return (
     <LocationContext.Provider
       value={{
+        currentCountry,
+        currentCountryCode,
+        currentCity,
         currentSector,
         currentCell,
         currentLocalArea,
         currentDistrict,
         currentProvince,
+        userCoords,
+        detectionMethod,
+        isLocating,
+        gpsPermissionStatus,
         isSelectorOpen,
         displayLabel,
+        requestGpsLocation,
+        setCountry,
         setSector,
         setCell,
         setLocalArea,

@@ -228,6 +228,9 @@ export interface Business {
   locationAccuracy?: number;
   locationVerificationStatus?: LocationVerificationStatus;
   locationCapturedById?: string;
+  distanceKm?: number;
+  proximityTier?: number;
+  isLocalResult?: boolean;
   locationCapturedAt?: string;
   locationVerifiedById?: string;
   locationVerifiedAt?: string;

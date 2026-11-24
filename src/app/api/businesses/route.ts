@@ -6,7 +6,7 @@ import { VerificationStatus, LocationSource, LocationVerificationStatus } from "
 import { formatBusinessRecord } from "@/lib/format-business";
 import { serializePublicBusiness } from "@/lib/public-serializer";
 import { parseSearchQuery } from "@/lib/search-nlp";
-import { checkNearDuplicates } from "@/lib/location-quality";
+import { checkNearDuplicates, haversineDistance } from "@/lib/location-quality";
 import { inspectRequestThreats } from "@/lib/security/threat-inspector";
 
 function buildLocationOrConditions(locationTerm: string) {
@@ -93,6 +93,9 @@ export async function GET(request: Request) {
   const hasOpportunities = searchParams.get("hasOpportunities") === "true";
   const targetLat = searchParams.get("lat") ? parseFloat(searchParams.get("lat")!) : (searchParams.get("latitude") ? parseFloat(searchParams.get("latitude")!) : undefined);
   const targetLng = searchParams.get("lng") ? parseFloat(searchParams.get("lng")!) : (searchParams.get("longitude") ? parseFloat(searchParams.get("longitude")!) : undefined);
+  const userCountry = searchParams.get("userCountry") || searchParams.get("country") || undefined;
+  const userCity = searchParams.get("userCity") || searchParams.get("city") || undefined;
+  const strictLocation = searchParams.get("strictLocation") === "true";
 
   try {
     // Proximity duplicate detection check using Haversine algorithm
@@ -183,7 +186,7 @@ export async function GET(request: Request) {
 
     if (districtId) {
       where.districtId = districtId;
-    } else if (district && district !== "all") {
+    } else if (strictLocation && district && district !== "all") {
       where.AND = where.AND || [];
       where.AND.push({
         OR: [
@@ -194,7 +197,7 @@ export async function GET(request: Request) {
       });
     }
 
-    if (sector && sector !== "all") {
+    if (strictLocation && sector && sector !== "all") {
       where.AND = where.AND || [];
       where.AND.push({
         OR: [
@@ -204,7 +207,7 @@ export async function GET(request: Request) {
       });
     }
 
-    if (cell && cell !== "all") {
+    if (strictLocation && cell && cell !== "all") {
       where.AND = where.AND || [];
       where.AND.push({
         OR: [
@@ -335,57 +338,167 @@ export async function GET(request: Request) {
         .catch(() => {});
     }
 
-    let businesses = await prisma.business.findMany({
-      where,
-      include: {
-        products: true,
-        reviews: true,
-        businessHours: true,
-        localArea: true,
-        media: true,
-        opportunities: {
-          where: {
-            status: "OPEN",
-            moderationStatus: "APPROVED",
+    let businesses: any[] = [];
+    try {
+      businesses = await prisma.business.findMany({
+        where,
+        include: {
+          products: true,
+          reviews: true,
+          businessHours: true,
+          localArea: true,
+          media: true,
+          opportunities: {
+            where: {
+              status: "OPEN",
+              moderationStatus: "APPROVED",
+            },
           },
         },
-      },
-      orderBy: { updatedAt: "desc" },
+        orderBy: { updatedAt: "desc" },
+      });
+    } catch (initialDbError) {
+      console.warn("[Businesses API] Transient DB pooler delay, retrying query once...", initialDbError);
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      businesses = await prisma.business.findMany({
+        where,
+        include: {
+          products: true,
+          reviews: true,
+          businessHours: true,
+          localArea: true,
+          media: true,
+          opportunities: {
+            where: {
+              status: "OPEN",
+              moderationStatus: "APPROVED",
+            },
+          },
+        },
+        orderBy: { updatedAt: "desc" },
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // MULTI-TIER PROXIMITY & VERIFICATION QUALITY DISCOVERY RANKING
+    // -------------------------------------------------------------------------
+    // Prioritization:
+    // 1. Relevant businesses in the immediate locality (Tier 1)
+    // 2. Other businesses in the same city or surrounding area (Tier 2)
+    // 3. Businesses elsewhere in the same country (Tier 3)
+    // 4. International businesses when relevant or when local results are limited (Tier 4)
+    // + Geodesic distance boost (Haversine formula) when GPS/IP coordinates are available
+    // + Commercial authenticity & verification quality boost within tiers
+    const cleanUserCountry = (userCountry || "").trim().toLowerCase();
+    const cleanUserCity = (userCity || "").trim().toLowerCase();
+    const cleanSector = (sector && sector !== "all" ? sector : "").trim().toLowerCase();
+    const cleanCell = (cell && cell !== "all" ? cell : "").trim().toLowerCase();
+    const cleanDistrict = (district && district !== "all" ? district : "").trim().toLowerCase();
+
+    businesses.forEach((biz: any) => {
+      let tier = 4; // default international
+      let distKm: number | null = null;
+      let score = 0;
+
+      // Extract country from addressNote or assume Rwanda
+      const note = (biz.addressNote || "").toLowerCase();
+      let bizCountry = "rwanda";
+      if (note.includes("[country:")) {
+        const m = note.match(/\[country:\s*([^|\]]+)/i);
+        if (m && m[1]) bizCountry = m[1].trim().toLowerCase();
+      }
+
+      const bizSector = (biz.sector || "").trim().toLowerCase();
+      const bizDistrict = (biz.district || "").trim().toLowerCase();
+      const bizCell = (biz.cell || "").trim().toLowerCase();
+
+      // Geodesic distance calculation if coordinates available
+      if (
+        targetLat !== undefined &&
+        targetLng !== undefined &&
+        typeof biz.latitude === "number" &&
+        typeof biz.longitude === "number" &&
+        !isNaN(targetLat) &&
+        !isNaN(targetLng)
+      ) {
+        const distMeters = haversineDistance(targetLat, targetLng, biz.latitude, biz.longitude);
+        distKm = Math.round(distMeters / 100) / 10;
+
+        if (distMeters <= 5000) {
+          score += 4000;
+        } else if (distMeters <= 20000) {
+          score += 2500;
+        } else if (distMeters <= 75000) {
+          score += 1500;
+        } else if (distMeters <= 300000) {
+          score += 500;
+        }
+      }
+
+      // Check Tier 1: Immediate Locality
+      const isImmediateLocality =
+        (cleanSector && bizSector === cleanSector) ||
+        (cleanCell && bizCell === cleanCell) ||
+        (cleanUserCity && bizSector.includes(cleanUserCity)) ||
+        (distKm !== null && distKm <= 10);
+
+      // Check Tier 2: Same City / District
+      const isSameCityOrDistrict =
+        (cleanDistrict && bizDistrict === cleanDistrict) ||
+        (cleanUserCity && (bizDistrict.includes(cleanUserCity) || cleanUserCity.includes(bizDistrict))) ||
+        (distKm !== null && distKm <= 50);
+
+      // Check Tier 3: Same Country
+      const isSameCountry =
+        cleanUserCountry &&
+        (cleanUserCountry === "rw" || cleanUserCountry === "rwanda" ? bizCountry === "rwanda" :
+         cleanUserCountry === "ug" || cleanUserCountry === "uganda" ? bizCountry.includes("uganda") :
+         cleanUserCountry === "ke" || cleanUserCountry === "kenya" ? bizCountry.includes("kenya") :
+         cleanUserCountry === "de" || cleanUserCountry === "germany" ? bizCountry.includes("germany") :
+         cleanUserCountry === "gb" || cleanUserCountry === "uk" || cleanUserCountry.includes("kingdom") ? bizCountry.includes("kingdom") || bizCountry.includes("uk") :
+         cleanUserCountry === "us" || cleanUserCountry === "usa" || cleanUserCountry.includes("united states") ? bizCountry.includes("united states") || bizCountry.includes("usa") :
+         bizCountry.includes(cleanUserCountry));
+
+      if (isImmediateLocality) {
+        tier = 1;
+        score += 25000;
+      } else if (isSameCityOrDistrict) {
+        tier = 2;
+        score += 12000;
+      } else if (isSameCountry) {
+        tier = 3;
+        score += 5000;
+      } else {
+        tier = 4;
+        score += 0;
+      }
+
+      // Quality & verification boost within tier
+      if (biz.dataStatus === "VERIFIED") score += 1000;
+      else if (biz.dataStatus === "RESEARCHED") score += 500;
+
+      if (biz.verificationStatus === "BUSINESS_VERIFIED") score += 400;
+      else if (biz.verificationStatus === "AGENT_VERIFIED") score += 300;
+      else if (biz.verificationStatus === "HIGH_CONFIDENCE") score += 200;
+      else if (biz.verificationStatus === "COMMUNITY_VERIFIED") score += 100;
+
+      const hasCover = Boolean(biz.coverImage && !biz.coverImage.includes("photo-1544816155-12df9643f363"));
+      const hasMedia = Array.isArray(biz.media) && biz.media.length > 0;
+      const hasProductMedia = Array.isArray(biz.products) && biz.products.some((p: any) => p.mediaUrl);
+      if (hasCover) score += 100;
+      else if (hasMedia || hasProductMedia) score += 80;
+
+      if (Array.isArray(biz.products) && biz.products.length > 0) score += 20;
+
+      biz._proximityScore = score;
+      biz.proximityTier = tier;
+      biz.isLocalResult = tier <= 3;
+      biz.distanceKm = distKm;
     });
 
-    // Default commercial ranking: prominently prioritize verified businesses,
-    // businesses with real ground visual content (coverImage, media, or product/service photos),
-    // and recently updated records, strictly avoiding social-media likes or popularity counters.
-    businesses.sort((a, b) => {
-      const getScore = (biz: typeof a) => {
-        let score = 0;
-        // 1. Data lifecycle status
-        if (biz.dataStatus === "VERIFIED") score += 1000;
-        else if (biz.dataStatus === "RESEARCHED") score += 500;
-
-        // 2. Specific verification badges
-        if (biz.verificationStatus === "BUSINESS_VERIFIED") score += 400;
-        else if (biz.verificationStatus === "AGENT_VERIFIED") score += 300;
-        else if (biz.verificationStatus === "HIGH_CONFIDENCE") score += 200;
-        else if (biz.verificationStatus === "COMMUNITY_VERIFIED") score += 100;
-
-        // 3. Ground visual content (cover photo or media or product/service photos)
-        const hasCover = Boolean(biz.coverImage && !biz.coverImage.includes("photo-1544816155-12df9643f363"));
-        const hasMedia = Array.isArray(biz.media) && biz.media.length > 0;
-        const hasProductMedia = Array.isArray(biz.products) && biz.products.some((p: any) => p.mediaUrl);
-        if (hasCover) score += 100;
-        else if (hasMedia || hasProductMedia) score += 80;
-
-        // 4. Product catalog presence
-        if (Array.isArray(biz.products) && biz.products.length > 0) score += 20;
-
-        return score;
-      };
-
-      const scoreA = getScore(a);
-      const scoreB = getScore(b);
-      if (scoreA !== scoreB) {
-        return scoreB - scoreA;
+    businesses.sort((a: any, b: any) => {
+      if (b._proximityScore !== a._proximityScore) {
+        return b._proximityScore - a._proximityScore;
       }
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
@@ -396,6 +509,12 @@ export async function GET(request: Request) {
       success: true,
       source: "live",
       count: formatted.length,
+      detectedLocality: {
+        country: userCountry || "Worldwide",
+        city: userCity || "Worldwide",
+        hasCoords: Boolean(targetLat && targetLng),
+      },
+      localCount: formatted.filter((b) => b.isLocalResult).length,
       nlpParsed: parsedNlp,
       businesses: formatted,
     });

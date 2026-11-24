@@ -9,6 +9,8 @@ interface TestResult {
   details: string;
 }
 
+export {};
+
 async function main() {
   console.log("==================================================================");
   console.log("MOSA PERMANENT PLATFORM PROTECTION & SECURITY RADAR VERIFICATION");

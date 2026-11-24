@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Business } from "@/types";
 import { useLanguage } from "@/lib/i18n";
 import { VerificationBadge, DataStatusBadge } from "@/components/common/Badge";
-import { MapPin, Phone, MessageCircle, Clock, ChevronRight, Tag, Briefcase } from "lucide-react";
+import { MapPin, Phone, MessageCircle, Clock, ChevronRight, Tag, Briefcase, Navigation } from "lucide-react";
 
 import { isVideoMedia, isLegacyBagPlaceholder } from "@/lib/media-upload";
 
@@ -146,14 +146,31 @@ export function BusinessCard({ business, variant = "standard", className = "" }:
               <span>{lang === "rw" ? "Ubucuruzi Bw'Icyitegererezo" : "Featured Merchant Spotlight"}</span>
             </div>
           )}
-          <div className="flex items-center justify-between text-xs mb-2">
-            <span className="font-semibold text-emerald-800 text-[11px] tracking-wider uppercase">
+          <div className="flex items-center justify-between text-xs mb-2 gap-2">
+            <span className="font-semibold text-emerald-800 text-[11px] tracking-wider uppercase truncate">
               {displayCategory}
             </span>
-            <span className="flex items-center gap-1 text-slate-500 text-xs font-medium max-w-[55%] truncate" title={locationLabel}>
-              <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span className="truncate">{locationLabel}</span>
-            </span>
+            <div className="flex items-center gap-1.5 max-w-[65%] shrink-0 justify-end">
+              {business.distanceKm !== undefined && business.distanceKm !== null && (
+                <span 
+                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 shrink-0 ${
+                    business.proximityTier === 1 
+                      ? "bg-emerald-100 text-emerald-800 border border-emerald-200" 
+                      : business.proximityTier === 2 
+                      ? "bg-blue-100 text-blue-800 border border-blue-200" 
+                      : "bg-slate-100 text-slate-700 border border-slate-200"
+                  }`}
+                  title={`${business.distanceKm.toFixed(1)} km away`}
+                >
+                  <Navigation className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                  <span>{business.distanceKm < 1 ? "< 1 km" : `${business.distanceKm.toFixed(1)} km`}</span>
+                </span>
+              )}
+              <span className="flex items-center gap-1 text-slate-500 text-xs font-medium truncate" title={locationLabel}>
+                <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="truncate">{locationLabel}</span>
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-3">

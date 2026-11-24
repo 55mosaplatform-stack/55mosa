@@ -114,6 +114,9 @@ export interface PublicBusiness {
   lastConfirmedAt?: string;
   updatedAt?: string;
   isClaimed?: boolean;
+  distanceKm?: number;
+  proximityTier?: number;
+  isLocalResult?: boolean;
 }
 
 /**
@@ -266,6 +269,9 @@ export function serializePublicBusiness(raw: any): PublicBusiness {
     lastConfirmedAt: formatted.lastConfirmedAt,
     updatedAt: formatted.updatedAt,
     isClaimed: formatted.isClaimed,
+    distanceKm: raw.distanceKm !== undefined ? raw.distanceKm : (formatted as any).distanceKm,
+    proximityTier: raw.proximityTier !== undefined ? raw.proximityTier : (formatted as any).proximityTier,
+    isLocalResult: raw.isLocalResult !== undefined ? raw.isLocalResult : (formatted as any).isLocalResult,
   };
 }
 

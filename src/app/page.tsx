@@ -29,7 +29,20 @@ import {
 export default function HomePage() {
   const router = useRouter();
   const { lang, t } = useLanguage();
-  const { currentSector, currentCell, currentLocalArea, displayLabel, openSelector, setSector, setFullLocation, resetLocation } = useLocation();
+  const { 
+    currentCountry, 
+    currentCity, 
+    currentSector, 
+    currentCell, 
+    currentLocalArea, 
+    userCoords,
+    detectionMethod,
+    displayLabel, 
+    openSelector, 
+    setSector, 
+    setFullLocation, 
+    resetLocation 
+  } = useLocation();
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
@@ -42,6 +55,12 @@ export default function HomePage() {
     try {
       const params = new URLSearchParams();
       if (selectedCategory !== "all") params.set("category", selectedCategory);
+      if (currentCountry) params.set("userCountry", currentCountry);
+      if (currentCity && currentCity !== "Worldwide") params.set("userCity", currentCity);
+      if (userCoords?.lat && userCoords?.lng) {
+        params.set("lat", userCoords.lat.toString());
+        params.set("lng", userCoords.lng.toString());
+      }
       if (currentSector && currentSector !== "all") params.set("sector", currentSector);
       if (currentCell && currentCell !== "all") params.set("cell", currentCell);
       if (currentLocalArea && currentLocalArea !== "all") params.set("community", currentLocalArea);
@@ -54,8 +73,11 @@ export default function HomePage() {
           setIsLoading(false);
           return;
         } else if (currentSector && currentSector !== "all") {
-          // Resilient Fallback: If filtered sector has no businesses yet, fetch all registered businesses
-          const fallbackRes = await fetch("/api/businesses");
+          // Resilient Fallback: If filtered sector has no businesses yet, fetch proximity-ranked businesses
+          const fallbackParams = new URLSearchParams();
+          if (currentCountry) fallbackParams.set("userCountry", currentCountry);
+          if (currentCity && currentCity !== "Worldwide") fallbackParams.set("userCity", currentCity);
+          const fallbackRes = await fetch(`/api/businesses?${fallbackParams.toString()}`);
           if (fallbackRes.ok) {
             const fallbackData = await fallbackRes.json();
             if (fallbackData.businesses && fallbackData.businesses.length > 0) {
@@ -75,7 +97,7 @@ export default function HomePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedCategory, currentSector, currentCell, currentLocalArea]);
+  }, [selectedCategory, currentCountry, currentCity, userCoords?.lat, userCoords?.lng, currentSector, currentCell, currentLocalArea]);
 
   useEffect(() => {
     loadBusinesses();

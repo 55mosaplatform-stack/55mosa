@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { interpretLocationDescription } from "@/lib/geocoding";
+import { interpretLocationDescription, reverseGeocodeCoords } from "@/lib/geocoding";
 
 export async function POST(request: Request) {
   try {
@@ -8,9 +8,14 @@ export async function POST(request: Request) {
     const context = body.context || undefined;
     const country = body.country || context?.country || undefined;
 
+    if (body.lat !== undefined && body.lng !== undefined) {
+      const rev = await reverseGeocodeCoords(Number(body.lat), Number(body.lng));
+      return NextResponse.json({ success: true, ...rev, result: rev });
+    }
+
     if (!description) {
       return NextResponse.json(
-        { success: false, error: "Location description is required" },
+        { success: false, error: "Location description or coordinates are required" },
         { status: 400 }
       );
     }
@@ -39,6 +44,19 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+    const latParam = searchParams.get("lat") || searchParams.get("latitude");
+    const lngParam = searchParams.get("lng") || searchParams.get("longitude");
+
+    // Reverse Geocoding by Coordinates
+    if (latParam && lngParam) {
+      const lat = parseFloat(latParam);
+      const lng = parseFloat(lngParam);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        const rev = await reverseGeocodeCoords(lat, lng);
+        return NextResponse.json({ success: true, ...rev, result: rev });
+      }
+    }
+
     const description = (searchParams.get("description") || searchParams.get("q") || "").trim();
     const country = searchParams.get("country") || undefined;
     const province = searchParams.get("province") || undefined;
@@ -47,7 +65,7 @@ export async function GET(request: Request) {
 
     if (!description) {
       return NextResponse.json(
-        { success: false, error: "Query parameter 'description' or 'q' is required" },
+        { success: false, error: "Query parameter 'description', 'q', or ('lat' & 'lng') is required" },
         { status: 400 }
       );
     }

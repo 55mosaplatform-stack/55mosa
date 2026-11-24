@@ -494,8 +494,32 @@ export const DEFAULT_INTERNATIONAL_CONFIG: CountryAddressConfig = {
 
 export function getCountryConfig(countryName?: string): CountryAddressConfig {
   if (!countryName) return GLOBAL_COUNTRY_CONFIGS.Rwanda;
+  const clean = countryName.trim().toLowerCase();
+  
+  // Try matching by exact or lowercase name
   const match = Object.keys(GLOBAL_COUNTRY_CONFIGS).find(
-    (k) => k.toLowerCase() === countryName.toLowerCase().trim()
+    (k) => k.toLowerCase() === clean
   );
-  return match ? GLOBAL_COUNTRY_CONFIGS[match] : DEFAULT_INTERNATIONAL_CONFIG;
+  if (match) return GLOBAL_COUNTRY_CONFIGS[match];
+
+  // Try matching by 2-letter ISO code
+  const codeMatch = Object.values(GLOBAL_COUNTRY_CONFIGS).find(
+    (c) => c.code.toLowerCase() === clean
+  );
+  if (codeMatch) return codeMatch;
+
+  return DEFAULT_INTERNATIONAL_CONFIG;
+}
+
+export function getCountryConfigByCode(countryCode?: string): CountryAddressConfig {
+  if (!countryCode) return GLOBAL_COUNTRY_CONFIGS.Rwanda;
+  const clean = countryCode.trim().toUpperCase();
+  const match = Object.values(GLOBAL_COUNTRY_CONFIGS).find(
+    (c) => c.code.toUpperCase() === clean
+  );
+  return match || DEFAULT_INTERNATIONAL_CONFIG;
+}
+
+export function getAllSupportedCountries(): CountryAddressConfig[] {
+  return Object.values(GLOBAL_COUNTRY_CONFIGS);
 }

@@ -3,7 +3,21 @@
 import React, { useState, useEffect } from "react";
 import { useLanguage } from "@/lib/i18n";
 import { useLocation, DEFAULT_COMMUNITIES, CommunityOption } from "@/lib/location-context";
-import { MapPin, X, Globe, Check, Search, ChevronRight, Building, Sparkles } from "lucide-react";
+import { getAllSupportedCountries } from "@/lib/country-address-config";
+import { 
+  MapPin, 
+  X, 
+  Globe, 
+  Check, 
+  Search, 
+  ChevronRight, 
+  Building, 
+  Sparkles, 
+  Navigation, 
+  Loader2,
+  ShieldCheck,
+  Compass
+} from "lucide-react";
 
 interface GeoSectorItem {
   id: string;
@@ -36,9 +50,19 @@ interface GeoSectorItem {
 export function LocationSelectorModal() {
   const { lang } = useLanguage();
   const {
+    currentCountry,
+    currentCountryCode,
+    currentCity,
     currentSector,
     currentCell,
     currentLocalArea,
+    userCoords,
+    detectionMethod,
+    isLocating,
+    gpsPermissionStatus,
+    displayLabel,
+    requestGpsLocation,
+    setCountry,
     setFullLocation,
     resetLocation,
     isSelectorOpen,
@@ -49,6 +73,7 @@ export function LocationSelectorModal() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sectorsData, setSectorsData] = useState<GeoSectorItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [gpsNotice, setGpsNotice] = useState<string | null>(null);
 
   // Hierarchy drill-down state
   const [selectedHierarchySector, setSelectedHierarchySector] = useState<GeoSectorItem | null>(null);
@@ -119,6 +144,131 @@ export function LocationSelectorModal() {
           >
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* Active Location & Geolocation Status Bar */}
+        <div className="bg-slate-950 px-4 sm:px-6 py-2.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-400 font-medium">
+              {lang === "rw" ? "Agace k'Ibanze Katoranyijwe:" : "Currently Prioritizing:"}
+            </span>
+            <span className="text-xs font-bold text-white bg-slate-800/90 px-2.5 py-0.5 rounded-lg border border-slate-700/80 flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-amber-400" />
+              <span>{displayLabel || `${currentCity}, ${currentCountry}`}</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+              detectionMethod === "GPS"
+                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                : detectionMethod === "IP"
+                ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                : "bg-purple-500/20 text-purple-400 border border-purple-500/30"
+            }`}>
+              {detectionMethod === "GPS" && <ShieldCheck className="w-3 h-3" />}
+              {detectionMethod === "IP" && <Globe className="w-3 h-3" />}
+              <span>
+                {detectionMethod === "GPS"
+                  ? (lang === "rw" ? "GPS Yemejwe" : "Device GPS")
+                  : detectionMethod === "IP"
+                  ? (lang === "rw" ? "IP Geolocation" : "Automatic IP Geolocation")
+                  : (lang === "rw" ? "Ihitamo ryawe" : "Manual Selection")}
+              </span>
+            </span>
+          </div>
+        </div>
+
+        {/* Geolocation Quick Actions: GPS & Countries */}
+        <div className="p-3.5 sm:p-4 border-b border-slate-100 bg-slate-50/80 space-y-2.5">
+          <div className="flex flex-col sm:flex-row gap-2">
+            {/* GPS Locate Button */}
+            <button
+              onClick={async () => {
+                setGpsNotice(null);
+                const ok = await requestGpsLocation();
+                if (ok) {
+                  closeSelector();
+                } else {
+                  setGpsNotice(
+                    lang === "rw"
+                      ? "Uruhushya rwa GPS ntirwabonetse. Urashobora guhitamo igihugu cyangwa umugi munsi."
+                      : "Device location permission was not granted. You can still select your country or city below."
+                  );
+                }
+              }}
+              disabled={isLocating}
+              className="flex-1 py-2 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-60 cursor-pointer"
+            >
+              {isLocating ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{lang === "rw" ? "Gushakisha aho uri..." : "Locating your position..."}</span>
+                </>
+              ) : (
+                <>
+                  <Navigation className="w-4 h-4" />
+                  <span>{lang === "rw" ? "Koresha GPS Yanjye Nyakuri" : "📍 Use My Exact GPS Location"}</span>
+                </>
+              )}
+            </button>
+
+            {/* Global Worldwide Button */}
+            <button
+              onClick={() => {
+                resetLocation();
+                closeSelector();
+              }}
+              className="py-2 px-3.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 font-semibold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+            >
+              <Globe className="w-4 h-4 text-blue-600" />
+              <span>{lang === "rw" ? "Isi Yose (Ahantu Hose)" : "Worldwide (All)"}</span>
+            </button>
+          </div>
+
+          {/* GPS Notice if permission denied */}
+          {gpsNotice && (
+            <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200/80 p-2.5 rounded-xl">
+              {gpsNotice}
+            </div>
+          )}
+
+          {/* Quick Country Pills */}
+          <div className="space-y-1">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              {lang === "rw" ? "Hindura Igihugu:" : "Switch Discovery Country:"}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { code: "RW", name: "Rwanda", city: "Kigali", flag: "🇷🇼" },
+                { code: "UG", name: "Uganda", city: "Kampala", flag: "🇺🇬" },
+                { code: "KE", name: "Kenya", city: "Nairobi", flag: "🇰🇪" },
+                { code: "DE", name: "Germany", city: "Berlin", flag: "🇩🇪" },
+                { code: "GB", name: "United Kingdom", city: "London", flag: "🇬🇧" },
+                { code: "US", name: "United States", city: "New York", flag: "🇺🇸" },
+                { code: "FR", name: "France", city: "Paris", flag: "🇫🇷" },
+                { code: "TZ", name: "Tanzania", city: "Dar es Salaam", flag: "🇹🇿" },
+              ].map((c) => {
+                const isSelected = currentCountry.toLowerCase() === c.name.toLowerCase();
+                return (
+                  <button
+                    key={c.code}
+                    onClick={() => {
+                      setCountry(c.name, c.city);
+                      closeSelector();
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+                      isSelected
+                        ? "bg-slate-900 text-white shadow-xs"
+                        : "bg-white hover:bg-slate-100 border border-slate-200 text-slate-700"
+                    }`}
+                  >
+                    <span>{c.flag}</span>
+                    <span>{c.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* View Switcher Tabs */}

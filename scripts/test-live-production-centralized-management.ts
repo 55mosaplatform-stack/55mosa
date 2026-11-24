@@ -8,6 +8,8 @@
  * 5. Authorization security on owner & admin API routes
  */
 
+export {};
+
 async function main() {
   console.log("================================================================================");
   console.log("55 MOSA — LIVE PRODUCTION CENTRALIZED MANAGEMENT & AUTONOMY SMOKE TEST");
