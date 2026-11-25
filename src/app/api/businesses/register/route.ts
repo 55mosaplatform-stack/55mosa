@@ -58,12 +58,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Owner name is required" }, { status: 400 });
     }
 
-    if (!category || typeof category !== "string") {
+    const effectiveCategory = (category && typeof category === "string") ? category : (body.mainCategory && typeof body.mainCategory === "string") ? body.mainCategory : null;
+    if (!effectiveCategory) {
       return NextResponse.json({ error: "Business category is required" }, { status: 400 });
     }
 
     // 1.1 Controlled 3-Tier Category Validation
-    const mainCategory = body.mainCategory || category;
+    const mainCategory = body.mainCategory || effectiveCategory;
     const subCategory = body.subCategory || null;
     const businessType = body.businessType || null;
 
