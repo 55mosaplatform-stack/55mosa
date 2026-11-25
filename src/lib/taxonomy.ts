@@ -1189,6 +1189,79 @@ export const CANONICAL_TAXONOMY: MainCategoryItem[] = [
       },
     ],
   },
+  // 24. Other Business & Specialized Services
+  {
+    id: "other_business",
+    name: "Other Business & Specialized Services",
+    nameRw: "Ubundi Bucuruzi na Serivisi Zihariye",
+    nameFr: "Autres Entreprises & Services Spécialisés",
+    nameSw: "Biashara Nyinginezo na Huduma Maalum",
+    icon: "MoreHorizontal",
+    subcategories: [
+      {
+        id: "general_specialized",
+        name: "Specialized Commercial Activities",
+        nameRw: "Ibikorwa by'Ubucuruzi Byihariye",
+        nameFr: "Activités Commerciales Spécialisées",
+        nameSw: "Shughuli Maalum za Kibiashara",
+        mainCategoryId: "other_business",
+        types: [
+          {
+            id: "specialized_enterprise",
+            name: "Specialized Enterprise / Custom Service",
+            nameRw: "Icyiciro Cyihariye cy'Ubucuruzi",
+            nameFr: "Entreprise Spécialisée / Service sur Mesure",
+            nameSw: "Biashara Maalum / Huduma ya Kipekee",
+            subCategoryId: "general_specialized",
+            mainCategoryId: "other_business",
+            operatingModel: "SERVICES",
+            isService: true,
+          },
+          {
+            id: "mixed_general_business",
+            name: "Multi-Activity / General Enterprise",
+            nameRw: "Ubucuruzi Buvange",
+            nameFr: "Entreprise Multi-Activités",
+            nameSw: "Biashara Mchanganyiko",
+            subCategoryId: "general_specialized",
+            mainCategoryId: "other_business",
+            operatingModel: "PRODUCTS",
+          },
+        ],
+      },
+      {
+        id: "nonprofit_community",
+        name: "Community & Social Organizations",
+        nameRw: "Imiryango Iteramiye Rubanda n'Amatsinda",
+        nameFr: "Organisations Communautaires & Sociales",
+        nameSw: "Mashirika ya Jamii na Kijamii",
+        mainCategoryId: "other_business",
+        types: [
+          {
+            id: "community_initiative",
+            name: "Community Initiative / Association",
+            nameRw: "Ishyirahamwe / Gahunda y'Abaturage",
+            nameFr: "Initiative Communautaire / Association",
+            nameSw: "Mpango wa Jamii / Chama",
+            subCategoryId: "nonprofit_community",
+            mainCategoryId: "other_business",
+            operatingModel: "SERVICES",
+            isService: true,
+          },
+          {
+            id: "social_enterprise",
+            name: "Social Enterprise / Cooperative",
+            nameRw: "Koperative / Ubucuruzi Bugamije Iterambere",
+            nameFr: "Entreprise Sociale / Coopérative",
+            nameSw: "Biashara ya Kijamii / Ushirika",
+            subCategoryId: "nonprofit_community",
+            mainCategoryId: "other_business",
+            operatingModel: "PRODUCTS",
+          },
+        ],
+      },
+    ],
+  },
 ];
 
 // Flat lookup index of all business types
@@ -1233,6 +1306,10 @@ export const LEGACY_CATEGORY_MAP: Record<string, string> = {
   "Pharmacy & Health": "health_wellness",
   "Restaurant & Cafe": "food_dining",
   "Tailoring & Fashion": "fashion_apparel",
+  other: "other_business",
+  Other: "other_business",
+  general: "other_business",
+  General: "other_business",
 };
 
 // Aliases so lookup via legacy key also finds the canonical MainCategoryItem
@@ -1516,4 +1593,215 @@ function getProductsModel(): OperatingModelInfo {
     hasOrders: true,
     hasStock: true,
   };
+}
+
+/**
+ * Smart Category Suggestion from Business Name & Description
+ * Returns the best matching canonical category, subcategory, and type
+ * based on commercial intent tokens, or null if no strong match.
+ */
+export function suggestCategoryFromText(text: string): {
+  mainCategory: string;
+  subCategory: string;
+  businessType: string;
+  categoryLabel: string;
+  reason: string;
+} | null {
+  if (!text || typeof text !== "string") return null;
+  const lower = text.toLowerCase();
+
+  const rules: Array<{
+    keywords: string[];
+    main: string;
+    sub: string;
+    type: string;
+    reason: string;
+  }> = [
+    // Restaurants & Food
+    {
+      keywords: ["restaurant", "cafe", "coffee", "bistro", "bakery", "pastry", "catering", "dining", "pizzeria", "burger", "food", "kitchen", "eatery", "snack"],
+      main: "food_dining",
+      sub: "restaurants_cafes",
+      type: "restaurant_casual",
+      reason: "Matched food, dining or coffee keywords",
+    },
+    // Art, Culture & Creative
+    {
+      keywords: ["art", "gallery", "craft", "painting", "sculpture", "cultural", "pottery", "studio", "creative", "exhibition", "handmade"],
+      main: "creative_art_media",
+      sub: "visual_arts_crafts",
+      type: "art_gallery_studio",
+      reason: "Matched arts, crafts or cultural keywords",
+    },
+    // Retail & Groceries
+    {
+      keywords: ["supermarket", "grocer", "grocery", "minimarket", "kiosk", "convenience", "wholesale", "depot"],
+      main: "retail_shops",
+      sub: "food_grocery",
+      type: "grocery_shop",
+      reason: "Matched grocery, supermarket or shop keywords",
+    },
+    // Boutiques & Fashion
+    {
+      keywords: ["boutique", "fashion", "apparel", "clothing", "clothes", "tailor", "sewing", "kitenge", "dresses", "suits", "shoes"],
+      main: "fashion_apparel",
+      sub: "clothing_boutiques",
+      type: "women_fashion_boutique",
+      reason: "Matched boutique or fashion keywords",
+    },
+    // Hotels & Accommodation
+    {
+      keywords: ["hotel", "lodge", "resort", "hostel", "guesthouse", "motel", "accommodation", "inn", "stay"],
+      main: "hospitality_lodging",
+      sub: "hotels_resorts",
+      type: "boutique_hotel",
+      reason: "Matched hotel or accommodation keywords",
+    },
+    // Bars & Nightlife
+    {
+      keywords: ["bar", "pub", "lounge", "cocktail", "nightclub", "beer", "wine", "club"],
+      main: "bars_nightlife",
+      sub: "bars_clubs",
+      type: "cocktail_lounge",
+      reason: "Matched bar or lounge keywords",
+    },
+    // Beauty, Salon & Barber
+    {
+      keywords: ["salon", "barber", "barbershop", "hair", "spa", "beauty", "massage", "nails", "cosmetics", "dreadlocks", "shave"],
+      main: "beauty_personal_care",
+      sub: "hair_salons_barbers",
+      type: "barbershop",
+      reason: "Matched salon, barber or personal care keywords",
+    },
+    // Health & Wellness
+    {
+      keywords: ["pharmacy", "chemist", "clinic", "hospital", "dispensary", "dental", "medical", "doctor", "optician", "laboratory", "health"],
+      main: "health_wellness",
+      sub: "pharmacies_chemists",
+      type: "community_pharmacy",
+      reason: "Matched pharmacy or healthcare keywords",
+    },
+    // Technology & Electronics
+    {
+      keywords: ["software", "tech", "technology", "computer", "laptop", "phone repair", "electronics", "web", "app", "cyber", "digital"],
+      main: "technology_telecom",
+      sub: "consumer_electronics",
+      type: "phone_accessories_shop",
+      reason: "Matched technology or electronics keywords",
+    },
+    // Automotive & Transport
+    {
+      keywords: ["transport", "car", "taxi", "rental", "logistics", "courier", "delivery", "garage", "auto", "mechanic", "tyre", "tours"],
+      main: "transport_logistics",
+      sub: "transport_fleet",
+      type: "car_hire_rental",
+      reason: "Matched transport or automotive keywords",
+    },
+    // Agriculture & Agribusiness
+    {
+      keywords: ["farm", "agriculture", "agri", "poultry", "livestock", "crop", "dairy", "coffee washing", "seeds", "fertilizer", "harvest"],
+      main: "agriculture_agribusiness",
+      sub: "crop_production",
+      type: "horticulture_vegetable_farm",
+      reason: "Matched agriculture or farming keywords",
+    },
+    // Manufacturing & Production
+    {
+      keywords: ["manufacturing", "factory", "production", "textile", "processing", "assembly", "industrial", "mill"],
+      main: "manufacturing_production",
+      sub: "food_beverage_processing",
+      type: "bakery_manufacturing",
+      reason: "Matched manufacturing or production keywords",
+    },
+    // Education & Training
+    {
+      keywords: ["school", "academy", "training", "college", "tutoring", "education", "institute", "course", "driving school"],
+      main: "education_training",
+      sub: "vocational_technical",
+      type: "vocational_training_center",
+      reason: "Matched education or training keywords",
+    },
+    // Professional Services
+    {
+      keywords: ["law", "legal", "audit", "accounting", "consulting", "advisory", "marketing", "agency", "architect", "notary"],
+      main: "professional_services",
+      sub: "accounting_tax",
+      type: "accounting_bookkeeping_firm",
+      reason: "Matched professional consulting or advisory keywords",
+    },
+    // Financial & Banking
+    {
+      keywords: ["bank", "sacco", "microfinance", "insurance", "forex", "money transfer", "credit", "cooperative"],
+      main: "finance_banking",
+      sub: "microfinance_credit",
+      type: "sacco_cooperative",
+      reason: "Matched financial or banking keywords",
+    },
+    // Construction & Building
+    {
+      keywords: ["construction", "contractor", "hardware", "cement", "building", "mason", "carpentry", "plumbing", "electrical", "paint"],
+      main: "construction_building",
+      sub: "building_contractors",
+      type: "general_contractor",
+      reason: "Matched construction or building keywords",
+    },
+    // Cleaning & Laundry
+    {
+      keywords: ["cleaning", "laundry", "dry clean", "dryclean", "car wash", "fumigation", "janitorial"],
+      main: "cleaning_laundry",
+      sub: "dry_cleaning_laundry",
+      type: "laundry_dry_cleaning",
+      reason: "Matched cleaning or laundry keywords",
+    },
+    // Real Estate & Property
+    {
+      keywords: ["real estate", "property", "apartment", "broker", "realtor", "rentals", "housing"],
+      main: "home_property",
+      sub: "real_estate_property",
+      type: "real_estate_agency",
+      reason: "Matched real estate or property keywords",
+    },
+    // Security Services
+    {
+      keywords: ["security", "guard", "surveillance", "cctv", "patrol", "alarm"],
+      main: "security_safety",
+      sub: "security_services",
+      type: "private_security_guards",
+      reason: "Matched security services keywords",
+    },
+    // Printing & Branding
+    {
+      keywords: ["printing", "branding", "signage", "banner", "business cards", "flyers", "graphic design"],
+      main: "printing_branding",
+      sub: "commercial_printing",
+      type: "digital_offset_printing",
+      reason: "Matched printing or branding keywords",
+    },
+    // Childcare
+    {
+      keywords: ["daycare", "childcare", "nursery", "kindergarten", "crèche", "playgroup"],
+      main: "childcare_personal_services",
+      sub: "childcare_early_learning",
+      type: "daycare_creche",
+      reason: "Matched childcare or nursery keywords",
+    },
+  ];
+
+  for (const rule of rules) {
+    for (const kw of rule.keywords) {
+      const regex = new RegExp(`\\b${kw}\\b`, "i");
+      if (regex.test(lower)) {
+        const mainObj = ALL_MAIN_CATEGORIES[rule.main];
+        return {
+          mainCategory: rule.main,
+          subCategory: rule.sub,
+          businessType: rule.type,
+          categoryLabel: mainObj ? mainObj.name : rule.main,
+          reason: rule.reason,
+        };
+      }
+    }
+  }
+
+  return null;
 }

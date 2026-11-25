@@ -139,6 +139,9 @@ export function SmartLocationForm({
   const geocodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const latestHierarchyRef = useRef<any>(null);
 
+  const [countryFilter, setCountryFilter] = useState("");
+  const [detectedVisitorLoc, setDetectedVisitorLoc] = useState<{ country: string; city?: string; flag?: string } | null>(null);
+
   // GPS acquisition states
   const [isCapturingGps, setIsCapturingGps] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
@@ -286,6 +289,20 @@ export function SmartLocationForm({
       })
       .catch((err) => console.warn("[SmartLocationForm] Geo load error:", err))
       .finally(() => setLoadingGeo(false));
+
+    // Optional visitor location suggestion (does not auto-set country without confirmation)
+    fetch("/api/geo/detect")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.detected && data?.country?.name) {
+          setDetectedVisitorLoc({
+            country: data.country.name,
+            city: data.locality?.city,
+            flag: data.country.flag,
+          });
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Compute available districts for selected province
@@ -879,22 +896,61 @@ export function SmartLocationForm({
           <span className="text-[10px] text-slate-400 font-medium">Synced with geocoder</span>
         </div>
 
-        {/* Country Selector */}
+        {/* Visitor Location Suggestion (requires explicit confirmation) */}
+        {detectedVisitorLoc && detectedVisitorLoc.country !== country && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-emerald-950">
+            <div className="flex items-center gap-2">
+              <span className="text-base">{detectedVisitorLoc.flag || "📍"}</span>
+              <span>
+                Detected visitor location: <strong>{detectedVisitorLoc.city ? `${detectedVisitorLoc.city}, ` : ""}{detectedVisitorLoc.country}</strong>. Does your business operate in {detectedVisitorLoc.country}?
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleCountryChange(detectedVisitorLoc.country)}
+              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs shrink-0 cursor-pointer transition-colors shadow-2xs"
+            >
+              Set Country to {detectedVisitorLoc.country}
+            </button>
+          </div>
+        )}
+
+        {/* Searchable Country Selector */}
         <div>
-          <label className="block text-slate-600 font-bold mb-1">
-            Country / Region <span className="text-red-500">*</span>
-          </label>
-          <select
-            value={country}
-            onChange={(e) => handleCountryChange(e.target.value)}
-            className="w-full sm:w-72 p-2 rounded-xl border border-slate-300 bg-white font-medium text-slate-800 outline-none focus:border-emerald-500 cursor-pointer shadow-2xs"
-          >
-            {SUPPORTED_COUNTRIES.map((c) => (
-              <option key={c.code} value={c.name}>
-                {c.flag} {c.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-slate-600 font-bold text-xs flex items-center gap-1.5">
+              <span>Required Business Country of Operation</span>
+              <span className="text-rose-500">*</span>
+            </label>
+            <span className="text-[11px] text-slate-500">
+              Select where this business actually operates
+            </span>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={countryFilter}
+              onChange={(e) => setCountryFilter(e.target.value)}
+              placeholder="Search country (e.g. Rwanda, Kenya, Uganda, UK, USA, Germany)..."
+              className="p-2 text-xs rounded-xl border border-slate-300 bg-white font-medium text-slate-800 outline-none focus:border-emerald-500 flex-1 shadow-2xs"
+            />
+            <select
+              value={country}
+              onChange={(e) => {
+                handleCountryChange(e.target.value);
+                setCountryFilter("");
+              }}
+              className="w-full sm:w-64 p-2 rounded-xl border border-slate-300 bg-white font-bold text-xs text-slate-800 outline-none focus:border-emerald-500 cursor-pointer shadow-2xs"
+            >
+              {SUPPORTED_COUNTRIES
+                .filter((c) => !countryFilter || c.name.toLowerCase().includes(countryFilter.toLowerCase()) || c.code.toLowerCase().includes(countryFilter.toLowerCase()))
+                .map((c) => (
+                  <option key={c.code} value={c.name}>
+                    {c.flag} {c.name} ({c.code})
+                  </option>
+                ))}
+            </select>
+          </div>
         </div>
 
         {country === "Rwanda" ? (

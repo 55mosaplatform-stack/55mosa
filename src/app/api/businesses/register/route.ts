@@ -28,6 +28,7 @@ export async function POST(request: Request) {
       ownerName,
       phone,
       whatsapp,
+      email,
       password,
       province,
       district,
@@ -42,6 +43,10 @@ export async function POST(request: Request) {
       longitude,
       locationAccuracy,
       products = [],
+      logo,
+      coverImage,
+      customCategoryName,
+      secondaryActivities = [],
     } = body;
 
     // 1. Validation
@@ -234,6 +239,10 @@ export async function POST(request: Request) {
       const precisionTag = "[Precision: Approximate Area / Landmark Reference - Pending Exact GPS Audit]";
       computedAddressNote = computedAddressNote ? `${precisionTag} ${computedAddressNote}` : precisionTag;
     }
+    if (Array.isArray(secondaryActivities) && secondaryActivities.length > 0) {
+      const activitiesTag = `[Activities: ${secondaryActivities.filter((a: any) => typeof a === "string" && a.trim()).join(", ")}]`;
+      computedAddressNote = computedAddressNote ? `${activitiesTag} ${computedAddressNote}` : activitiesTag;
+    }
 
     if (resolvedLat === null || resolvedLng === null) {
       return NextResponse.json(
@@ -268,6 +277,7 @@ export async function POST(request: Request) {
           data: {
             phone: cleanPhone,
             name: ownerName && ownerName.trim() ? ownerName.trim() : `${name.trim()} Owner`,
+            email: email && typeof email === "string" && email.trim() ? email.trim() : undefined,
             role: Role.BUSINESS_OWNER,
             passwordHash,
             community: isRw
@@ -284,7 +294,11 @@ export async function POST(request: Request) {
       const resolvedType = businessType ? ALL_BUSINESS_TYPES[businessType] : null;
       const resolvedSub = subCategory ? ALL_SUBCATEGORIES[subCategory] : null;
 
-      const finalCatDisplay = resolvedType?.name || resolvedSub?.name || resolvedMain?.name || categoryDisplay || "Local Business";
+      const customCat = (mainCategory === "other_business" && customCategoryName && typeof customCategoryName === "string")
+        ? customCategoryName.trim()
+        : null;
+
+      const finalCatDisplay = customCat || resolvedType?.name || resolvedSub?.name || resolvedMain?.name || categoryDisplay || "Local Business";
       const finalCatDisplayRw = resolvedType?.nameRw || resolvedSub?.nameRw || resolvedMain?.nameRw || categoryDisplayRw || "Ubucuruzi bw'Agace";
 
       const b = await tx.business.create({
@@ -295,7 +309,7 @@ export async function POST(request: Request) {
           category: mainCategory,
           subCategory: subCategory,
           businessType: businessType,
-          businessTypeDisplay: resolvedType?.name || null,
+          businessTypeDisplay: customCat || resolvedType?.name || null,
           businessTypeDisplayRw: resolvedType?.nameRw || null,
           categoryDisplay: finalCatDisplay,
           categoryDisplayRw: finalCatDisplayRw,
@@ -303,6 +317,8 @@ export async function POST(request: Request) {
           descriptionRw: descriptionRw?.trim() || description?.trim() || "Ubucuruzi bw'agace bwanditswe kuri MOSA.",
           phone: cleanPhone,
           whatsapp: cleanWhatsapp,
+          email: email && typeof email === "string" && email.trim() ? email.trim() : null,
+          logo: logo && typeof logo === "string" ? logo.trim() : null,
           ownerId: u.id,
           sector: sector?.trim() || (isRw ? "Unspecified" : (district?.trim() || countryConfig.name)),
           cell: cell?.trim() || (isRw ? "Unspecified" : (streetName?.trim() || nearestLandmark?.trim() || countryConfig.name)),
@@ -325,7 +341,7 @@ export async function POST(request: Request) {
           districtId: resolvedDistrictId,
           sectorId: resolvedSectorId,
           cellId: resolvedCellId,
-          coverImage: body.coverImage ? body.coverImage.trim() : null,
+          coverImage: coverImage && typeof coverImage === "string" ? coverImage.trim() : (body.coverImage ? body.coverImage.trim() : null),
         },
       });
 
