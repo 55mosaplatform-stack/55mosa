@@ -38,6 +38,7 @@ import {
   Megaphone,
   Sparkles,
   Briefcase,
+  ShieldAlert,
   Users,
   Truck,
   Info,
@@ -1434,8 +1435,31 @@ export default function BusinessDetailPage({
             </div>
           )}
 
-          {/* Report Button */}
-          <div className="text-center pt-2">
+          {/* MOSA DIRECT Confidential Report Entry Point */}
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+              <span className="flex items-center gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                <span>MOSA DIRECT: Your Voice. Our Attention.</span>
+              </span>
+              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-bold">
+                Direct to Admin
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Notice wrong pricing, closed storefront, wrong location, or suspicious activity? Submit a confidential report directly to platform governance.
+            </p>
+            <Link
+              href={`/direct?category=INCORRECT_INFO&businessId=${business.id}&businessName=${encodeURIComponent(displayName)}`}
+              className="w-full py-2 px-3 rounded-xl bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold border border-slate-200 transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+              <span>Report via MOSA DIRECT</span>
+            </Link>
+          </div>
+
+          {/* Quick Flag Button */}
+          <div className="text-center pt-1">
             <button
               onClick={() => setReportModalOpen(true)}
               className="text-xs text-slate-400 hover:text-red-600 transition-colors inline-flex items-center gap-1.5"

@@ -26,7 +26,8 @@ import {
   LogOut,
   LogIn,
   Type,
-  Check
+  Check,
+  ShieldAlert
 } from "lucide-react";
 import { useTextSize } from "@/lib/text-size-context";
 
@@ -47,6 +48,7 @@ export function Navbar() {
     { href: "/explore", label: t.nav.explore, icon: Search },
     { href: "/community", label: lang === "rw" ? "Amatangazo n'Amakuru" : "Community & News", icon: Megaphone },
     { href: "/demand", label: t.nav.whatPeopleNeed, icon: TrendingUp },
+    { href: "/direct", label: "MOSA DIRECT", icon: ShieldAlert },
   ];
 
   // The Admin Command Center is completely isolated and never renders public consumer navigation.

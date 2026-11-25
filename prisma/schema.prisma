@@ -126,6 +126,7 @@ model User {
   enrolledDevices      PaymentBridgeDevice[] @relation("EnrolledBridgeDevices")
   revokedDevices       PaymentBridgeDevice[] @relation("RevokedBridgeDevices")
   feePromotionsCreated FeePromotion[]        @relation("AdminFeePromotions")
+  assignedMosaDirectMessages MosaDirectMessage[] @relation("AssignedMosaDirect")
 
   @@index([phone])
   @@index([email])
@@ -1264,5 +1265,74 @@ model PaymentRateLimit {
 
   @@map("payment_rate_limits")
   @@index([resetAt])
+}
+
+// -------------------------------------------------------------
+// MOSA DIRECT: Global Feedback & Reporting System
+// Tagline: Your Voice. Our Attention.
+// -------------------------------------------------------------
+
+enum MosaDirectCategory {
+  SUGGESTION
+  COMPLAINT_FEEDBACK
+  INCORRECT_INFO
+  FRAUD_MISCONDUCT
+  TECHNICAL_ISSUE
+  PARTNERSHIP
+  GENERAL_MESSAGE
+}
+
+enum MosaDirectStatus {
+  NEW
+  UNDER_REVIEW
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum MosaDirectPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+model MosaDirectMessage {
+  id                  String             @id @default(cuid())
+  referenceNumber     String             @unique // e.g. "MD-20261125-9A8B"
+  category            MosaDirectCategory @default(GENERAL_MESSAGE)
+  subject             String
+  message             String
+  isAnonymous         Boolean            @default(false)
+  senderName          String?
+  senderEmail         String?
+  senderPhone         String?
+  senderCountry       String?            // ISO code or Country name, e.g. "RW", "KE", "US"
+  relatedBusinessId   String?
+  relatedBusinessName String?
+  attachments         String[]           @default([]) // URLs of uploaded attachments/screenshots
+  priority            MosaDirectPriority @default(NORMAL)
+  status              MosaDirectStatus   @default(NEW)
+  isRead              Boolean            @default(false)
+  readAt              DateTime?
+  readById            String?
+  assignedToId        String?
+  assignedTo          User?              @relation("AssignedMosaDirect", fields: [assignedToId], references: [id], onDelete: SetNull)
+  adminNotes          String?
+  responseHistory     Json?              @default("[]") // Array of { id, text, respondedAt, respondedByName, respondedById, channel }
+  ipHash              String?            // Salted SHA-256 hash of IP for spam prevention without storing raw IP in plain text
+  userAgent           String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([referenceNumber])
+  @@index([status])
+  @@index([category])
+  @@index([priority])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([assignedToId])
+  @@index([senderCountry])
+  @@index([relatedBusinessId])
 }
 

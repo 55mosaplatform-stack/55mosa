@@ -117,6 +117,7 @@ export async function GET() {
       claims,
       smsMessages,
       changeHistories,
+      directUnreadCountResult,
     ] = await Promise.all([
       prisma.auditLog.findMany({
         take: 30,
@@ -183,7 +184,14 @@ export async function GET() {
           product: { select: { name: true } },
         },
       }),
+      prisma.mosaDirectMessage.count({
+        where: {
+          OR: [{ isRead: false }, { status: "NEW" }],
+        },
+      }).catch(() => 0),
     ]);
+
+    const mosaDirectUnreadCount = directUnreadCountResult || 0;
 
     // Duplicate detection analysis across businesses
     const duplicatesMap: Record<string, string[]> = {};
@@ -404,7 +412,9 @@ export async function GET() {
         revenueByCurrency,
         supportedCountriesCount: supportedCountriesConfig.length,
         activeCountriesCount: countrySummary.filter((c) => c.totalBusinesses > 0).length,
+        mosaDirectUnreadCount,
       },
+      mosaDirectUnreadCount,
       countrySummary,
       supportedCountries: supportedCountriesConfig,
       revenueByCurrency,

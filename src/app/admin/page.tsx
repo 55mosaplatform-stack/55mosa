@@ -56,11 +56,13 @@ import {
   BellRing,
   Sliders,
   CreditCard,
-  Radio
+  Radio,
+  Inbox
 } from "lucide-react";
 import { PlatformIdentityTab } from "@/components/admin/PlatformIdentityTab";
 import { RegistrationPaymentsTab } from "@/components/admin/RegistrationPaymentsTab";
 import { SecurityAndOperationsRadarTab } from "@/components/admin/SecurityAndOperationsRadarTab";
+import { MosaDirectInboxTab } from "@/components/admin/MosaDirectInboxTab";
 import { SmartLocationForm, SmartLocationFormData } from "@/components/location/SmartLocationForm";
 import { calculateLocationCompleteness } from "@/lib/location-quality";
 import { RWANDA_HIERARCHY } from "@/lib/rwanda-geo";
@@ -140,6 +142,7 @@ export default function AdminPanelPage() {
     | "businesses"
     | "countries"
     | "categories"
+    | "direct"
     | "users"
     | "verification"
     | "products"
@@ -165,6 +168,7 @@ export default function AdminPanelPage() {
   >("overview");
 
   // Global Multi-Country & Operations State
+  const [mosaDirectUnreadCount, setMosaDirectUnreadCount] = useState<number>(0);
   const [countrySummary, setCountrySummary] = useState<any[]>([]);
   const [supportedCountries, setSupportedCountries] = useState<any[]>([]);
   const [revenueByCurrency, setRevenueByCurrency] = useState<Record<string, number>>({
@@ -399,6 +403,7 @@ export default function AdminPanelPage() {
         if (data.supportedCountries) setSupportedCountries(data.supportedCountries);
         if (data.revenueByCurrency) setRevenueByCurrency(data.revenueByCurrency);
         if (data.dbLatencyMs !== undefined) setDbLatencyMs(data.dbLatencyMs);
+        if (data.mosaDirectUnreadCount !== undefined) setMosaDirectUnreadCount(data.mosaDirectUnreadCount);
         if (data.businesses && data.businesses.length > 0) {
           setBusinesses(data.businesses.map((b: any) => {
             const country = b.country || b.location?.country || "Rwanda";
@@ -1472,6 +1477,13 @@ export default function AdminPanelPage() {
       <div className="flex items-center gap-2 border-b border-slate-200 pb-3 mb-6 overflow-x-auto no-scrollbar">
         {[
           { id: "overview", label: "Global Overview", count: null, icon: Activity },
+          { 
+            id: "direct", 
+            label: "MOSA Direct Inbox", 
+            count: mosaDirectUnreadCount, 
+            icon: Inbox,
+            highlight: mosaDirectUnreadCount > 0 
+          },
           { id: "businesses", label: "Businesses", count: businesses.length, icon: StoreIcon },
           { id: "countries", label: "Countries & Regions", count: supportedCountries.length || 12, icon: Globe },
           { id: "categories", label: "Categories & Services", count: 24, icon: Tag },
@@ -1528,7 +1540,7 @@ export default function AdminPanelPage() {
       {activeTab === "overview" && (
         <div className="space-y-6">
           {/* Executive KPI Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Businesses</p>
@@ -1561,6 +1573,28 @@ export default function AdminPanelPage() {
               </div>
               <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
                 <FileCheck className="w-6 h-6" />
+              </div>
+            </div>
+
+            {/* Dedicated MOSA DIRECT Inbox Metric */}
+            <div
+              onClick={() => setActiveTab("direct")}
+              className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between hover:border-emerald-500 transition-all cursor-pointer group"
+            >
+              <div>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-emerald-700">MOSA DIRECT</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <h3 className="text-2xl font-black text-slate-900">{mosaDirectUnreadCount}</h3>
+                  {mosaDirectUnreadCount > 0 && (
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                      Unread
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">Inbound user reports & feedback</p>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-700 group-hover:bg-emerald-600 group-hover:text-white transition-colors flex items-center justify-center">
+                <Inbox className="w-6 h-6" />
               </div>
             </div>
 
@@ -1834,6 +1868,13 @@ export default function AdminPanelPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* MOSA DIRECT INBOX Tab */}
+      {activeTab === "direct" && (
+        <MosaDirectInboxTab
+          onUnreadCountChange={(cnt) => setMosaDirectUnreadCount(cnt)}
+        />
       )}
 
       {/* Businesses Tab */}

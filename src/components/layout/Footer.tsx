@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLanguage } from "@/lib/i18n";
 import { usePlatformSettings } from "@/lib/platform-context";
-import { ShieldCheck, HeartHandshake, Mail, Phone, MessageSquare } from "lucide-react";
+import { ShieldCheck, HeartHandshake, Mail, Phone, MessageSquare, ShieldAlert } from "lucide-react";
 
 export function Footer() {
   const pathname = usePathname();
@@ -102,6 +102,12 @@ export function Footer() {
                 </Link>
               </li>
               <li>
+                <Link href="/direct" className="text-emerald-400 hover:text-emerald-300 font-semibold transition-colors flex items-center gap-1.5">
+                  <ShieldAlert className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>MOSA DIRECT (Feedback & Reports)</span>
+                </Link>
+              </li>
+              <li>
                 <Link href="/register-business" className="hover:text-white transition-colors">
                   {lang === "rw" ? "Kwiyandikisha" : "Register Business"}
                 </Link>
@@ -137,6 +143,14 @@ export function Footer() {
             © 2026 55 MOSA. All rights reserved.
           </p>
           <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/direct"
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/30 text-[11px] text-emerald-300 font-semibold hover:bg-emerald-900/60 transition-colors"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-emerald-400" />
+              <span>MOSA DIRECT: Your Voice. Our Attention.</span>
+            </Link>
+            <span className="text-slate-700 hidden sm:inline">•</span>
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-[11px] text-emerald-400 font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
               No Gambling • Zero Extractive Ads
