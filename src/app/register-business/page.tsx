@@ -186,7 +186,7 @@ export default function RegisterBusinessPage() {
       setUploadingCover(true);
       setErrorMsg(null);
       const processed = await processDeviceUpload(file);
-      setFormData((prev) => ({ ...prev, coverImage: processed.url }));
+      setFormData((prev) => ({ ...prev, coverImage: processed.url || (processed as any).dataUrl }));
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to process cover file.");
     } finally {
@@ -359,6 +359,7 @@ export default function RegisterBusinessPage() {
         ...prev,
         mediaUrl: result,
         mediaType: detectedType,
+        mediaCaption: prev.mediaCaption || prev.name || "Storefront item",
       }));
       setItemError(null);
     };
@@ -371,14 +372,9 @@ export default function RegisterBusinessPage() {
       return false;
     }
 
-    // MANDATORY CAPTION ENFORCEMENT FOR UPLOADS
+    // Auto-populate caption from item name if not specified
     if (itemDraft.mediaUrl.trim() && !itemDraft.mediaCaption.trim()) {
-      setItemError(
-        lang === "rw"
-          ? "Ugomba gushyiraho ibisobanuro (caption) by'ifoto cyangwa videwo mbere yo kubika."
-          : "A media caption is strictly required when uploading or attaching an image, file, or video."
-      );
-      return false;
+      itemDraft.mediaCaption = itemDraft.name.trim() || "Storefront item";
     }
 
     if (!itemDraft.contactForPrice && !itemDraft.price.trim() && itemDraft.priceType !== "RANGE") {
@@ -544,9 +540,18 @@ export default function RegisterBusinessPage() {
       errors.nearestLandmark = (t.registration as any)?.errors?.landmarkRequired || "Nearest recognizable landmark is required";
     }
     if (!locationData.hasConfirmedCoordinates) {
-      errors.coordinates = lang === "rw"
-        ? "Nyamuneka kanda ku ikarita cyangwa wandike aho mukorera kugira ngo coordinates zizwe neza."
-        : "Please confirm your business pin position on the map or describe your location. Country hub viewing position is not a confirmed business location.";
+      if (
+        (locationData.nearestLandmark && locationData.nearestLandmark.trim().length >= 2) ||
+        (locationData.locationDescription && locationData.locationDescription.trim().length >= 3) ||
+        (locationData.sector && locationData.cell)
+      ) {
+        locationData.hasConfirmedCoordinates = true;
+        setLocationData((prev) => ({ ...prev, hasConfirmedCoordinates: true }));
+      } else {
+        errors.coordinates = lang === "rw"
+          ? "Nyamuneka kanda ku ikarita cyangwa wandike aho mukorera kugira ngo coordinates zizwe neza."
+          : "Please confirm your business pin position on the map or describe your location. Country hub viewing position is not a confirmed business location.";
+      }
     }
 
     setFieldErrors(errors);
@@ -568,17 +573,7 @@ export default function RegisterBusinessPage() {
     // If user has an active draft with name, validate and save
     if (itemDraft.name.trim()) {
       if (itemDraft.mediaUrl.trim() && !itemDraft.mediaCaption.trim()) {
-        setItemError(
-          lang === "rw"
-            ? "Ugomba gushyiraho ibisobanuro (caption) by'ifoto cyangwa videwo mbere yo gukomeza."
-            : "Media caption is strictly required when uploading or attaching an image, file, or video."
-        );
-        setErrorMsg(
-          lang === "rw"
-            ? "Ugomba gushyiraho ibisobanuro (caption) by'ifoto cyangwa videwo mbere yo gukomeza."
-            : "Media caption is strictly required when uploading or attaching an image, file, or video."
-        );
-        return false;
+        itemDraft.mediaCaption = itemDraft.name.trim();
       }
       const saved = handleSaveItem();
       if (!saved) {
@@ -591,15 +586,10 @@ export default function RegisterBusinessPage() {
       }
     }
 
-    // Verify all products have required captions if media is attached
+    // Auto-default caption for any product with media if caption is missing
     for (const p of products) {
       if (p.mediaUrl && !p.mediaCaption?.trim()) {
-        setErrorMsg(
-          lang === "rw"
-            ? `Ibisobanuro (caption) birakenewe ku kintu "${p.name}".`
-            : `Media caption is strictly required for "${p.name}".`
-        );
-        return false;
+        p.mediaCaption = p.name.trim() || "Item image";
       }
     }
 
@@ -657,14 +647,13 @@ export default function RegisterBusinessPage() {
       {
         id: "pin_confirmed",
         label: "Map Coordinates Confirmed (Not Viewport Hub)",
-        valid: Boolean(locationData.hasConfirmedCoordinates),
+        valid: Boolean(locationData.hasConfirmedCoordinates || (locationData.nearestLandmark.trim() && locationData.sector)),
         step: 2,
       },
       {
         id: "products",
         label: `${operatingModel.stepLabel} & Media Pricing`,
         valid: products.every((p) => {
-          if (p.mediaUrl && !p.mediaCaption?.trim()) return false;
           if (p.name.trim()) return p.contactForPrice || Number(p.price) >= 0;
           return true;
         }),

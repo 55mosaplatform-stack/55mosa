@@ -6,6 +6,7 @@
 
 export interface ProcessedMedia {
   url: string;
+  dataUrl: string; // Dual property compatibility for components accessing .dataUrl or .url
   mediaType: "IMAGE" | "VIDEO" | "FILE";
   fileName: string;
   fileSize: number;
@@ -50,8 +51,10 @@ export async function processDeviceUpload(file: File): Promise<ProcessedMedia> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
+        const resUrl = e.target?.result as string;
         resolve({
-          url: e.target?.result as string,
+          url: resUrl,
+          dataUrl: resUrl,
           mediaType: "VIDEO",
           fileName: file.name,
           fileSize: file.size,
@@ -72,6 +75,7 @@ export async function processDeviceUpload(file: File): Promise<ProcessedMedia> {
         if (file.size < 300 * 1024) {
           return resolve({
             url: rawDataUrl,
+            dataUrl: rawDataUrl,
             mediaType: "IMAGE",
             fileName: file.name,
             fileSize: file.size,
@@ -102,6 +106,7 @@ export async function processDeviceUpload(file: File): Promise<ProcessedMedia> {
           if (!ctx) {
             return resolve({
               url: rawDataUrl,
+              dataUrl: rawDataUrl,
               mediaType: "IMAGE",
               fileName: file.name,
               fileSize: file.size,
@@ -112,6 +117,7 @@ export async function processDeviceUpload(file: File): Promise<ProcessedMedia> {
           const compressed = canvas.toDataURL("image/jpeg", 0.85);
           resolve({
             url: compressed,
+            dataUrl: compressed,
             mediaType: "IMAGE",
             fileName: file.name,
             fileSize: Math.round((compressed.length * 3) / 4),
@@ -120,6 +126,7 @@ export async function processDeviceUpload(file: File): Promise<ProcessedMedia> {
         img.onerror = () => {
           resolve({
             url: rawDataUrl,
+            dataUrl: rawDataUrl,
             mediaType: "IMAGE",
             fileName: file.name,
             fileSize: file.size,
@@ -136,8 +143,10 @@ export async function processDeviceUpload(file: File): Promise<ProcessedMedia> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
+      const docUrl = e.target?.result as string;
       resolve({
-        url: e.target?.result as string,
+        url: docUrl,
+        dataUrl: docUrl,
         mediaType: "FILE",
         fileName: file.name,
         fileSize: file.size,

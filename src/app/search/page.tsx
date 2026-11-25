@@ -4,6 +4,7 @@ import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useLanguage } from "@/lib/i18n";
+import { useLocation } from "@/lib/location-context";
 import { Business } from "@/types";
 import { BusinessCard } from "@/components/discovery/BusinessCard";
 import { VerificationBadge } from "@/components/common/Badge";
@@ -37,6 +38,7 @@ function SearchContent() {
   const router = useRouter();
   const initialQuery = searchParams.get("q") || "";
   const { lang, t } = useLanguage();
+  const { currentCountry, currentCity, userCoords } = useLocation();
 
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<Business[]>([]);
@@ -61,6 +63,12 @@ function SearchContent() {
           if (openNowOnly) params.set("openNowOnly", "true");
           if (selectedCell !== "all") params.set("community", selectedCell);
           if (opportunitiesOnly) params.set("hasOpportunities", "true");
+          if (currentCountry) params.set("userCountry", currentCountry);
+          if (currentCity) params.set("userCity", currentCity);
+          if (userCoords?.lat && userCoords?.lng) {
+            params.set("lat", userCoords.lat.toString());
+            params.set("lng", userCoords.lng.toString());
+          }
           const res = await fetch(`/api/businesses?${params.toString()}`);
           if (res.ok) {
             const data = await res.json();
@@ -88,6 +96,12 @@ function SearchContent() {
           if (openNowOnly) params.set("openNowOnly", "true");
           if (selectedCell !== "all") params.set("community", selectedCell);
           if (opportunitiesOnly) params.set("hasOpportunities", "true");
+          if (currentCountry) params.set("userCountry", currentCountry);
+          if (currentCity) params.set("userCity", currentCity);
+          if (userCoords?.lat && userCoords?.lng) {
+            params.set("lat", userCoords.lat.toString());
+            params.set("lng", userCoords.lng.toString());
+          }
           const url = `/api/businesses${params.toString() ? `?${params.toString()}` : ""}`;
           const res = await fetch(url);
           if (res.ok) {
@@ -109,7 +123,7 @@ function SearchContent() {
       }
     }
     loadSearch();
-  }, [initialQuery, openNowOnly, verifiedOnly, selectedCell, opportunitiesOnly]);
+  }, [initialQuery, openNowOnly, verifiedOnly, selectedCell, opportunitiesOnly, currentCountry, currentCity, userCoords]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();

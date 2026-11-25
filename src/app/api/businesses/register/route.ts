@@ -113,10 +113,14 @@ export async function POST(request: Request) {
     }
 
     const hasCoordinates = typeof latitude === "number" && typeof longitude === "number" && !isNaN(latitude) && !isNaN(longitude);
-    const coordinatesConfirmed = Boolean(body.hasConfirmedCoordinates);
+    const hasAddressDescription = Boolean(
+      (nearestLandmark && typeof nearestLandmark === "string" && nearestLandmark.trim().length >= 2) ||
+      (locationDescription && typeof locationDescription === "string" && locationDescription.trim().length >= 3)
+    );
+    const coordinatesConfirmed = Boolean(body.hasConfirmedCoordinates) || hasAddressDescription;
     const hasGps = hasCoordinates && typeof locationAccuracy === "number";
 
-    // Strict validation: Coordinates must be confirmed by the user (pin adjustment, geocoding, or GPS)
+    // Strict validation: Coordinates must be confirmed by the user (pin adjustment, geocoding, landmark/directions, or GPS)
     // Country map viewport viewing hubs must never be saved as unconfirmed business locations.
     const regCountry = body.country && typeof body.country === "string" ? body.country.trim() : "Rwanda";
     const countryConfig = getCountryConfig(regCountry);
@@ -135,7 +139,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (isCountryHubCoord && !body.explicitHubConfirmation) {
+    if (isCountryHubCoord && !body.explicitHubConfirmation && !hasAddressDescription && !sector) {
       return NextResponse.json(
         {
           error: "Coordinates match a country map viewing hub. Please select your specific business street, building, or landmark location.",
@@ -165,7 +169,7 @@ export async function POST(request: Request) {
       if (dbSector) {
         if (!resolvedSectorId) resolvedSectorId = dbSector.id;
         if (!resolvedDistrictId) resolvedDistrictId = dbSector.districtId;
-        if (resolvedLat === null || resolvedLng === null) {
+        if (resolvedLat === null || resolvedLng === null || isCountryHubCoord) {
           resolvedLat = dbSector.latitude;
           resolvedLng = dbSector.longitude;
         }

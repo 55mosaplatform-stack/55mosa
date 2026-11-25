@@ -399,9 +399,11 @@ export function SmartLocationForm({
     const s = availableSectors.find((item: any) => item.id === sId);
     if (s) {
       setSector(s.name);
-      if (locationSource === "ADMIN_MANUAL" && s.latitude && s.longitude) {
+      if (s.latitude && s.longitude) {
         setLatitude(s.latitude);
         setLongitude(s.longitude);
+        setMapCenter({ lat: s.latitude, lng: s.longitude });
+        setHasConfirmedCoordinates(true);
       }
       const firstCell = s.cells[0];
       if (firstCell) {
@@ -416,9 +418,11 @@ export function SmartLocationForm({
     const c = availableCells.find((item: any) => item.id === cId);
     if (c) {
       setCell(c.name);
-      if (locationSource === "ADMIN_MANUAL" && c.latitude && c.longitude) {
+      if (c.latitude && c.longitude) {
         setLatitude(c.latitude);
         setLongitude(c.longitude);
+        setMapCenter({ lat: c.latitude, lng: c.longitude });
+        setHasConfirmedCoordinates(true);
       }
     }
   };
@@ -797,7 +801,19 @@ export function SmartLocationForm({
             </span>
           </div>
           <div className="flex items-center gap-3">
-            {hasConfirmedCoordinates && (
+            {!hasConfirmedCoordinates ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setHasConfirmedCoordinates(true);
+                  setLocationSource("OWNER_REPORTED");
+                }}
+                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-[10px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+              >
+                <CheckCircle2 className="w-3 h-3" />
+                <span>Confirm Location Pin</span>
+              </button>
+            ) : (
               <a
                 href={`https://www.google.com/maps/@?api=1&map_action=map&center=${latitude},${longitude}&zoom=17`}
                 target="_blank"
@@ -1097,7 +1113,11 @@ export function SmartLocationForm({
             <input
               type="text"
               value={streetName}
-              onChange={(e) => setStreetName(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setStreetName(val);
+                if (val.trim().length >= 2) setHasConfirmedCoordinates(true);
+              }}
               placeholder={currentCountryConfig.streetExample}
               className="w-full p-2.5 rounded-xl border border-slate-300 bg-white font-medium focus:border-emerald-500"
             />
@@ -1111,7 +1131,11 @@ export function SmartLocationForm({
               type="text"
               required
               value={nearestLandmark}
-              onChange={(e) => setNearestLandmark(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setNearestLandmark(val);
+                if (val.trim().length >= 2) setHasConfirmedCoordinates(true);
+              }}
               placeholder={currentCountryConfig.landmarkExample}
               className={`w-full p-2.5 rounded-xl border font-medium transition-colors ${
                 errors?.nearestLandmark
@@ -1173,7 +1197,11 @@ export function SmartLocationForm({
           </label>
           <textarea
             value={locationDescription}
-            onChange={(e) => setLocationDescription(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setLocationDescription(val);
+              if (val.trim().length >= 3) setHasConfirmedCoordinates(true);
+            }}
             rows={2}
             placeholder="e.g. Opposite the yellow MTN kiosk, 2nd shop after the pharmacy on the left side."
             className="w-full p-2.5 rounded-xl border border-slate-300 bg-white leading-relaxed"

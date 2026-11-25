@@ -9,6 +9,11 @@ import { parseSearchQuery } from "@/lib/search-nlp";
 import { checkNearDuplicates, haversineDistance } from "@/lib/location-quality";
 import { inspectRequestThreats } from "@/lib/security/threat-inspector";
 
+const SEARCH_STOPWORDS = new Set([
+  "a", "an", "the", "in", "at", "for", "of", "and", "or", "to", "from", "on", "by",
+  "with", "near", "muri", "ku", "ya", "na", "mu", "hafi", "za", "wa", "rwanda", "kigali"
+]);
+
 function buildLocationOrConditions(locationTerm: string) {
   const clean = locationTerm.trim();
   const tokens: string[] = [clean];
@@ -253,39 +258,100 @@ export async function GET(request: Request) {
 
     if (search) {
       parsedNlp = parseSearchQuery(search);
-      const q = parsedNlp.cleanQuery || search.trim();
+      const q = (parsedNlp.cleanQuery || search).trim();
       where.AND = where.AND || [];
 
-      // If category was auto-detected from NLP query and not explicitly selected
-      if (parsedNlp.detectedCategory && (!category || category === "all")) {
-        where.category = parsedNlp.detectedCategory;
+      // Extract search tokens across full query and clean query, skipping stopwords
+      const rawTokens = `${search} ${q}`
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/gi, " ")
+        .split(/\s+/)
+        .map((t) => t.trim())
+        .filter((t) => t.length >= 2 && !SEARCH_STOPWORDS.has(t));
+      const tokens = Array.from(new Set(rawTokens));
+
+      const orConditions: any[] = [];
+
+      const buildTermConditions = (term: string) => [
+        { name: { contains: term, mode: "insensitive" as const } },
+        { nameRw: { contains: term, mode: "insensitive" as const } },
+        { nameFr: { contains: term, mode: "insensitive" as const } },
+        { nameSw: { contains: term, mode: "insensitive" as const } },
+        { description: { contains: term, mode: "insensitive" as const } },
+        { descriptionRw: { contains: term, mode: "insensitive" as const } },
+        { categoryDisplay: { contains: term, mode: "insensitive" as const } },
+        { categoryDisplayRw: { contains: term, mode: "insensitive" as const } },
+        { businessTypeDisplay: { contains: term, mode: "insensitive" as const } },
+        { businessTypeDisplayRw: { contains: term, mode: "insensitive" as const } },
+        { businessType: { contains: term, mode: "insensitive" as const } },
+        { subCategory: { contains: term, mode: "insensitive" as const } },
+        { nearestLandmark: { contains: term, mode: "insensitive" as const } },
+        { streetName: { contains: term, mode: "insensitive" as const } },
+        { nearbyPlace: { contains: term, mode: "insensitive" as const } },
+        { locationDescription: { contains: term, mode: "insensitive" as const } },
+        { cell: { contains: term, mode: "insensitive" as const } },
+        { sector: { contains: term, mode: "insensitive" as const } },
+        { district: { contains: term, mode: "insensitive" as const } },
+        { addressNote: { contains: term, mode: "insensitive" as const } },
+        { products: { some: { name: { contains: term, mode: "insensitive" as const } } } },
+        { products: { some: { description: { contains: term, mode: "insensitive" as const } } } },
+      ];
+
+      // Exact phrase match conditions
+      if (q) {
+        orConditions.push(...buildTermConditions(q));
+      }
+      if (search.trim() !== q) {
+        orConditions.push(...buildTermConditions(search.trim()));
+      }
+
+      // Individual token matches across goods, services, names and locations
+      for (const token of tokens) {
+        orConditions.push(...buildTermConditions(token));
+      }
+
+      // If category was auto-detected from NLP query, include category matches
+      if (parsedNlp.detectedCategory) {
+        orConditions.push(
+          { category: parsedNlp.detectedCategory },
+          { mainCategory: parsedNlp.detectedCategory },
+          { categoryDisplay: { contains: parsedNlp.detectedCategory, mode: "insensitive" as const } }
+        );
       }
 
       // If landmark was detected
       if (parsedNlp.matchedLandmark) {
-        where.AND.push({
-          OR: buildLocationOrConditions(parsedNlp.matchedLandmark),
-        });
+        orConditions.push(...buildLocationOrConditions(parsedNlp.matchedLandmark));
       }
 
       // If sector was detected
-      if (parsedNlp.matchedSector && (!sector || sector === "all")) {
-        where.AND.push({
-          OR: [
-            { sector: { contains: parsedNlp.matchedSector, mode: "insensitive" } },
-            { sectorRel: { name: { contains: parsedNlp.matchedSector, mode: "insensitive" } } },
-          ],
-        });
+      if (parsedNlp.matchedSector) {
+        orConditions.push(
+          { sector: { contains: parsedNlp.matchedSector, mode: "insensitive" as const } },
+          { sectorRel: { name: { contains: parsedNlp.matchedSector, mode: "insensitive" as const } } },
+          { addressNote: { contains: parsedNlp.matchedSector, mode: "insensitive" as const } },
+          { locationDescription: { contains: parsedNlp.matchedSector, mode: "insensitive" as const } }
+        );
       }
 
       // If cell was detected
-      if (parsedNlp.matchedCell && (!cell || cell === "all")) {
-        where.AND.push({
-          OR: [
-            { cell: { contains: parsedNlp.matchedCell, mode: "insensitive" } },
-            { cellRel: { name: { contains: parsedNlp.matchedCell, mode: "insensitive" } } },
-          ],
-        });
+      if (parsedNlp.matchedCell) {
+        orConditions.push(
+          { cell: { contains: parsedNlp.matchedCell, mode: "insensitive" as const } },
+          { cellRel: { name: { contains: parsedNlp.matchedCell, mode: "insensitive" as const } } }
+        );
+      }
+
+      // If district was detected
+      if (parsedNlp.matchedDistrict) {
+        orConditions.push(
+          { district: { contains: parsedNlp.matchedDistrict, mode: "insensitive" as const } },
+          { addressNote: { contains: parsedNlp.matchedDistrict, mode: "insensitive" as const } }
+        );
+      }
+
+      if (orConditions.length > 0) {
+        where.AND.push({ OR: orConditions });
       }
 
       // If price condition detected (e.g. under 2000 Frw)
@@ -294,34 +360,6 @@ export async function GET(request: Request) {
           OR: [
             { products: { some: { price: { lte: parsedNlp.priceMax } } } },
             { priceRangeMin: { lte: parsedNlp.priceMax } },
-          ],
-        });
-      }
-
-      // Text query match
-      if (q) {
-        where.AND.push({
-          OR: [
-            { name: { contains: q, mode: "insensitive" } },
-            { nameRw: { contains: q, mode: "insensitive" } },
-            { nameFr: { contains: q, mode: "insensitive" } },
-            { nameSw: { contains: q, mode: "insensitive" } },
-            { description: { contains: q, mode: "insensitive" } },
-            { descriptionRw: { contains: q, mode: "insensitive" } },
-            { categoryDisplay: { contains: q, mode: "insensitive" } },
-            { categoryDisplayRw: { contains: q, mode: "insensitive" } },
-            { businessTypeDisplay: { contains: q, mode: "insensitive" } },
-            { businessTypeDisplayRw: { contains: q, mode: "insensitive" } },
-            { businessType: { contains: q, mode: "insensitive" } },
-            { subCategory: { contains: q, mode: "insensitive" } },
-            { nearestLandmark: { contains: q, mode: "insensitive" } },
-            { streetName: { contains: q, mode: "insensitive" } },
-            { nearbyPlace: { contains: q, mode: "insensitive" } },
-            { locationDescription: { contains: q, mode: "insensitive" } },
-            { cell: { contains: q, mode: "insensitive" } },
-            { sector: { contains: q, mode: "insensitive" } },
-            { addressNote: { contains: q, mode: "insensitive" } },
-            { products: { some: { name: { contains: q, mode: "insensitive" } } } },
           ],
         });
       }
@@ -490,6 +528,81 @@ export async function GET(request: Request) {
 
       if (Array.isArray(biz.products) && biz.products.length > 0) score += 20;
 
+      // Search relevance scoring for goods, services, names and locations
+      let searchScore = 0;
+      if (search) {
+        const normSearch = search.toLowerCase().trim();
+        const normClean = (parsedNlp?.cleanQuery || search).toLowerCase().trim();
+        const bizName = (biz.name || "").toLowerCase();
+        const bizDesc = (biz.description || "").toLowerCase();
+        const bizCat = (biz.category || "").toLowerCase();
+        const bizCatDisplay = (biz.categoryDisplay || "").toLowerCase();
+        const bizSector = (biz.sector || "").toLowerCase();
+        const bizCell = (biz.cell || "").toLowerCase();
+        const bizDist = (biz.district || "").toLowerCase();
+        const bizLandmark = (biz.nearestLandmark || "").toLowerCase();
+        const bizDirections = (biz.locationDescription || "").toLowerCase();
+        const bizProducts = Array.isArray(biz.products) ? biz.products : [];
+
+        // Exact phrase matches on name, goods, services
+        if (bizName.includes(normClean) || bizName.includes(normSearch)) {
+          searchScore += 50000;
+        }
+        if (bizCatDisplay.includes(normClean) || bizCat.includes(normClean)) {
+          searchScore += 30000;
+        }
+        for (const prod of bizProducts) {
+          const pName = (prod.name || "").toLowerCase();
+          const pDesc = (prod.description || "").toLowerCase();
+          if (pName.includes(normClean) || pName.includes(normSearch)) {
+            searchScore += 45000;
+          }
+          if (pDesc.includes(normClean) || pDesc.includes(normSearch)) {
+            searchScore += 25000;
+          }
+        }
+
+        // Token match bonuses
+        const queryTokens = Array.from(
+          new Set(
+            `${normSearch} ${normClean}`
+              .replace(/[^a-z0-9\s-]/gi, " ")
+              .split(/\s+/)
+              .filter((t) => t.length >= 2 && !SEARCH_STOPWORDS.has(t))
+          )
+        );
+
+        for (const token of queryTokens) {
+          if (bizName.includes(token)) searchScore += 18000;
+          if (bizCatDisplay.includes(token) || bizCat.includes(token)) searchScore += 12000;
+          if (bizDesc.includes(token)) searchScore += 6000;
+          if (bizSector.includes(token) || bizCell.includes(token) || bizDist.includes(token)) searchScore += 14000;
+          if (bizLandmark.includes(token) || bizDirections.includes(token)) searchScore += 14000;
+
+          for (const prod of bizProducts) {
+            const pName = (prod.name || "").toLowerCase();
+            const pDesc = (prod.description || "").toLowerCase();
+            if (pName.includes(token)) searchScore += 18000;
+            if (pDesc.includes(token)) searchScore += 10000;
+          }
+        }
+
+        // NLP category match boost
+        if (parsedNlp?.detectedCategory && (bizCat === parsedNlp.detectedCategory || biz.mainCategory === parsedNlp.detectedCategory)) {
+          searchScore += 30000;
+        }
+
+        // NLP location match boost
+        if (parsedNlp?.matchedSector && bizSector.includes(parsedNlp.matchedSector.toLowerCase())) {
+          searchScore += 40000;
+        }
+        if (parsedNlp?.matchedLandmark && (bizLandmark.includes(parsedNlp.matchedLandmark.toLowerCase()) || bizDirections.includes(parsedNlp.matchedLandmark.toLowerCase()))) {
+          searchScore += 40000;
+        }
+      }
+
+      score += searchScore;
+      biz._searchRelevanceScore = searchScore;
       biz._proximityScore = score;
       biz.proximityTier = tier;
       biz.isLocalResult = tier <= 3;
