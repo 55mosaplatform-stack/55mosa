@@ -225,6 +225,14 @@ async function runVerification() {
 
   // TEST 6: Multi-Term Search Discovery with Secondary Activities
   try {
+    if (testBusinessId) {
+      // Transition status to ACTIVE (simulating successful activation/payment) for public search indexing
+      await prisma.business.update({
+        where: { id: testBusinessId },
+        data: { status: "ACTIVE" },
+      });
+    }
+
     const searchRes = await fetch(`${PROD_URL}/api/businesses?search=Geospatial%20Mapping`);
     const searchData = await searchRes.json();
 
@@ -315,7 +323,7 @@ async function runVerification() {
   if (testBusinessId) {
     try {
       await prisma.product.deleteMany({ where: { businessId: testBusinessId } });
-      await prisma.payment.deleteMany({ where: { businessId: testBusinessId } });
+      await prisma.registrationPayment.deleteMany({ where: { businessId: testBusinessId } });
       await prisma.business.delete({ where: { id: testBusinessId } });
       await prisma.user.deleteMany({ where: { phone: testPhone } });
       console.log(`[CLEANUP] Spotless hygiene: test business ${testBusinessId} and user removed.`);

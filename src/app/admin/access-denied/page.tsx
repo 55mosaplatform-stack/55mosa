@@ -24,7 +24,7 @@ export default function AccessDeniedPage() {
             Access Denied
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 max-w-sm mx-auto">
-            The <strong>MOSA COMMAND CENTER</strong> is strictly reserved for authorized platform administrators and governance staff.
+            The <strong>55 MOSA — Global Command Center</strong> is strictly reserved for authorized platform administrators and governance staff.
           </p>
         </div>
 

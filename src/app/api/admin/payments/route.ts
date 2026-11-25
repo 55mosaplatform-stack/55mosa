@@ -113,11 +113,28 @@ export async function GET(req: NextRequest) {
     ]);
 
     // Financial KPI summaries
-    const [pendingCount, failedCount, duplicateCount] = await Promise.all([
+    const [pendingCount, failedCount, duplicateCount, confirmedPayments] = await Promise.all([
       prisma.registrationPayment.count({ where: { status: "PENDING" } }),
       prisma.registrationPayment.count({ where: { status: "FAILED" } }),
       prisma.registrationPayment.count({ where: { status: "DUPLICATE" } }),
+      prisma.registrationPayment.findMany({
+        where: { status: "CONFIRMED" },
+        select: { feeAmount: true, currency: true },
+      }),
     ]);
+
+    const revenueByCurrency: Record<string, number> = {
+      RWF: 0,
+      KES: 0,
+      UGX: 0,
+      USD: 0,
+      GBP: 0,
+      EUR: 0,
+    };
+    for (const p of confirmedPayments) {
+      const curr = (p.currency || "RWF").toUpperCase();
+      revenueByCurrency[curr] = (revenueByCurrency[curr] || 0) + (p.feeAmount || 0);
+    }
 
     // By provider breakdown
     const [mtnCount, airtelCount, bankCount, waiverCount] = await Promise.all([
@@ -147,6 +164,7 @@ export async function GET(req: NextRequest) {
         activeRenewalFee: renewalKPIs.activeRenewalFee,
         gracePeriodDays: renewalKPIs.gracePeriodDays,
         currency: renewalKPIs.currency,
+        revenueByCurrency,
         byProvider: {
           MTN_MOMO: mtnCount,
           AIRTEL_MONEY: airtelCount,

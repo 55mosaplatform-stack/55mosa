@@ -143,13 +143,13 @@ function AdminLoginContent() {
           </div>
           <div className="space-y-1">
             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-              GOVERNANCE PORTAL
+              GLOBAL GOVERNANCE PORTAL
             </span>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-              MOSA COMMAND CENTER
+              55 MOSA — Global Command Center
             </h1>
             <p className="text-xs text-slate-500 font-medium">
-              Platform Administration & Business Verification
+              Platform Administration, International Operations &amp; Global Verification
             </p>
           </div>
         </div>

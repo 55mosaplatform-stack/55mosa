@@ -7,6 +7,7 @@ import { VerificationStatus, ReportStatus, Role } from "@prisma/client";
 import { formatBusinessRecord } from "@/lib/format-business";
 import { sendBusinessSMS } from "@/lib/sms";
 import { permanentlyDeleteBusiness } from "@/lib/business-deletion";
+import { getAllSupportedCountries, getCountryConfig } from "@/lib/country-address-config";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,11 @@ export async function GET() {
   }
 
   try {
+    // Measure Real Database Latency
+    const dbPingStart = Date.now();
+    await prisma.$queryRaw`SELECT 1`;
+    const dbLatencyMs = Date.now() - dbPingStart;
+
     // Batch 1: Key Metric Aggregations & Geographic Counts
     const [
       totalBusinesses,
@@ -53,6 +59,10 @@ export async function GET() {
       flaggedMediaCount,
       flaggedProductsCount,
       businessesRequiringReviewCount,
+      totalPaymentsCount,
+      confirmedPaymentsCount,
+      pendingPaymentsCount,
+      confirmedPayments,
     ] = await Promise.all([
       prisma.business.count({ where: { status: { not: "ARCHIVED" } } }),
       prisma.business.count({ where: { status: { not: "ARCHIVED" }, verificationStatus: { in: [VerificationStatus.AGENT_VERIFIED, VerificationStatus.HIGH_CONFIDENCE] } } }),
@@ -74,7 +84,28 @@ export async function GET() {
       prisma.businessMedia.count({ where: { moderationStatus: { in: ["FLAGGED", "REMOVED"] } } }),
       prisma.product.count({ where: { moderationStatus: { in: ["FLAGGED", "REMOVED"] } } }),
       prisma.business.count({ where: { status: { in: ["PENDING", "NEEDS_CORRECTION"] } } }),
+      prisma.registrationPayment.count(),
+      prisma.registrationPayment.count({ where: { status: "CONFIRMED" } }),
+      prisma.registrationPayment.count({ where: { status: "PENDING" } }),
+      prisma.registrationPayment.findMany({
+        where: { status: "CONFIRMED" },
+        select: { feeAmount: true, currency: true },
+      }),
     ]);
+
+    // Multi-currency revenue calculation
+    const revenueByCurrency: Record<string, number> = {
+      RWF: 0,
+      KES: 0,
+      UGX: 0,
+      USD: 0,
+      GBP: 0,
+      EUR: 0,
+    };
+    for (const p of confirmedPayments) {
+      const curr = (p.currency || "RWF").toUpperCase();
+      revenueByCurrency[curr] = (revenueByCurrency[curr] || 0) + (p.feeAmount || 0);
+    }
 
     // Batch 2: Entity Lists & Workflows
     const [
@@ -233,6 +264,112 @@ export async function GET() {
       }
     }
 
+    // Global Country & Administrative Distribution Aggregation
+    const supportedCountriesConfig = getAllSupportedCountries();
+    const countryStatsMap: Record<string, {
+      country: string;
+      code: string;
+      flag: string;
+      currency: string;
+      phonePrefix: string;
+      totalBusinesses: number;
+      activeBusinesses: number;
+      pendingBusinesses: number;
+      suspendedBusinesses: number;
+      verifiedBusinesses: number;
+      unverifiedBusinesses: number;
+      missingLandmarkCount: number;
+      unconfirmedCoordsCount: number;
+      regions: Record<string, number>;
+      categories: Record<string, number>;
+    }> = {};
+
+    // Initialize with all configured countries
+    for (const cfg of supportedCountriesConfig) {
+      countryStatsMap[cfg.name] = {
+        country: cfg.name,
+        code: cfg.code,
+        flag: cfg.flag,
+        currency: cfg.currency,
+        phonePrefix: cfg.phonePrefix,
+        totalBusinesses: 0,
+        activeBusinesses: 0,
+        pendingBusinesses: 0,
+        suspendedBusinesses: 0,
+        verifiedBusinesses: 0,
+        unverifiedBusinesses: 0,
+        missingLandmarkCount: 0,
+        unconfirmedCoordsCount: 0,
+        regions: {},
+        categories: {},
+      };
+    }
+
+    // Format all businesses cleanly
+    const formattedBusinessesList = businesses.map((b: any) => ({
+      ...formatBusinessRecord(b),
+      isPotentialDuplicate: duplicateIds.has(b.id),
+      owner: b.owner,
+      verifications: b.verifications,
+      media: b.media,
+      updates: b.updates,
+    }));
+
+    for (const b of formattedBusinessesList) {
+      const countryName = b.location?.country || "Rwanda";
+      if (!countryStatsMap[countryName]) {
+        const cfg = getCountryConfig(countryName);
+        countryStatsMap[countryName] = {
+          country: countryName,
+          code: cfg.code,
+          flag: cfg.flag,
+          currency: cfg.currency,
+          phonePrefix: cfg.phonePrefix,
+          totalBusinesses: 0,
+          activeBusinesses: 0,
+          pendingBusinesses: 0,
+          suspendedBusinesses: 0,
+          verifiedBusinesses: 0,
+          unverifiedBusinesses: 0,
+          missingLandmarkCount: 0,
+          unconfirmedCoordsCount: 0,
+          regions: {},
+          categories: {},
+        };
+      }
+      const cs = countryStatsMap[countryName];
+      cs.totalBusinesses += 1;
+      if (b.status === "ACTIVE") cs.activeBusinesses += 1;
+      else if (b.status === "PENDING" || b.status === "NEEDS_CORRECTION") cs.pendingBusinesses += 1;
+      else if (b.status === "SUSPENDED") cs.suspendedBusinesses += 1;
+
+      if (b.dataStatus === "VERIFIED" || b.verificationStatus === "AGENT_VERIFIED" || b.verificationStatus === "HIGH_CONFIDENCE") {
+        cs.verifiedBusinesses += 1;
+      } else {
+        cs.unverifiedBusinesses += 1;
+      }
+
+      if (!b.location?.nearestLandmark) {
+        cs.missingLandmarkCount += 1;
+      }
+      const isConfirmedCoords = b.location?.verificationStatus === "AGENT_VERIFIED" ||
+                                (b.location?.verificationStatus as string) === "AGENT_CAPTURED" ||
+                                (b.location?.verificationStatus as string) === "HIGH_CONFIDENCE" ||
+                                b.verificationStatus === "AGENT_VERIFIED" ||
+                                (b.verificationStatus as string) === "HIGH_CONFIDENCE";
+      if (!isConfirmedCoords) {
+        cs.unconfirmedCoordsCount += 1;
+      }
+
+      const reg = b.location?.province || b.location?.district || "Default Region";
+      cs.regions[reg] = (cs.regions[reg] || 0) + 1;
+
+      const cat = b.category || "retail";
+      cs.categories[cat] = (cs.categories[cat] || 0) + 1;
+    }
+
+    const countrySummary = Object.values(countryStatsMap);
+
     return NextResponse.json({
       success: true,
       metrics: {
@@ -260,18 +397,22 @@ export async function GET() {
         flaggedMediaCount,
         flaggedProductsCount,
         businessesRequiringReview: businessesRequiringReviewCount,
+        dbLatencyMs,
+        totalPaymentsCount,
+        confirmedPaymentsCount,
+        pendingPaymentsCount,
+        revenueByCurrency,
+        supportedCountriesCount: supportedCountriesConfig.length,
+        activeCountriesCount: countrySummary.filter((c) => c.totalBusinesses > 0).length,
       },
+      countrySummary,
+      supportedCountries: supportedCountriesConfig,
+      revenueByCurrency,
+      dbLatencyMs,
       locationCategoryBreakdown,
       categorySummary,
       auditLogs: recentAuditLogs,
-      businesses: businesses.map((b: any) => ({
-        ...formatBusinessRecord(b),
-        isPotentialDuplicate: duplicateIds.has(b.id),
-        owner: b.owner,
-        verifications: b.verifications,
-        media: b.media,
-        updates: b.updates,
-      })),
+      businesses: formattedBusinessesList,
       captures,
       reports,
       demands,
