@@ -97,10 +97,13 @@ export function calculateLocationCompleteness(business: {
   const hasCoordinates =
     typeof business.latitude === "number" &&
     typeof business.longitude === "number" &&
-    business.latitude >= -2.9 &&
-    business.latitude <= -1.0 &&
-    business.longitude >= 28.8 &&
-    business.longitude <= 30.9;
+    !isNaN(business.latitude) &&
+    !isNaN(business.longitude) &&
+    business.latitude >= -90 &&
+    business.latitude <= 90 &&
+    business.longitude >= -180 &&
+    business.longitude <= 180 &&
+    !(business.latitude === 0 && business.longitude === 0);
 
   const isGpsVerified = Boolean(
     (business.locationSource === "GPS_DEVICE" || business.locationSource === "AGENT_PIN") &&
@@ -154,17 +157,21 @@ export function calculateLocationCompleteness(business: {
  * Builds Google Maps navigation URL from MOSA authoritative coordinates
  */
 export function getGoogleMapsDirectionsUrl(
-  latOrTarget: number | { lat: number; lng: number; name?: string },
+  latOrTarget: number | { lat: number; lng: number; name?: string; placeId?: string },
   optionalLng?: number
 ): string {
   let lat = 0;
   let lng = 0;
-  let name: string | undefined;
+  let placeId: string | undefined;
 
   if (typeof latOrTarget === "object" && latOrTarget !== null) {
     lat = latOrTarget.lat;
     lng = latOrTarget.lng;
-    name = latOrTarget.name;
+    if (latOrTarget.placeId && latOrTarget.placeId.startsWith("ChI")) {
+      placeId = latOrTarget.placeId;
+    } else if (latOrTarget.name && latOrTarget.name.startsWith("ChI")) {
+      placeId = latOrTarget.name;
+    }
   } else if (typeof latOrTarget === "number") {
     lat = latOrTarget;
     lng = optionalLng ?? 0;
@@ -172,6 +179,6 @@ export function getGoogleMapsDirectionsUrl(
 
   const destination = `${lat.toFixed(6)},${lng.toFixed(6)}`;
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}${
-    name ? `&destination_place_id=${encodeURIComponent(name)}` : ""
+    placeId ? `&destination_place_id=${encodeURIComponent(placeId)}` : ""
   }`;
 }

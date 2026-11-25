@@ -121,7 +121,7 @@ export function SmartLocationForm({
   const [locationSource, setLocationSource] = useState<LocationSource>(initialValues?.locationSource || (hasInitialCoords ? "OWNER_REPORTED" : "ADMIN_MANUAL"));
   const [locationAccuracy, setLocationAccuracy] = useState<number | undefined>(initialValues?.locationAccuracy);
   const [locationVerificationStatus, setLocationVerificationStatus] = useState<LocationVerificationStatus>(
-    initialValues?.locationVerificationStatus || (hasInitialCoords ? "AGENT_CAPTURED" : "UNVERIFIED")
+    initialValues?.locationVerificationStatus || "UNVERIFIED"
   );
 
   // Natural Description Geocoding & Interpretation states
@@ -503,11 +503,9 @@ export function SmartLocationForm({
     setLongitude(cleanLng);
     setMapCenter({ lat: cleanLat, lng: cleanLng });
     setHasConfirmedCoordinates(true);
-    setLocationSource("AGENT_PIN");
+    setLocationSource("MAP_SELECTION");
     setPinManuallyAdjusted(true);
-    if (locationVerificationStatus === "UNVERIFIED") {
-      setLocationVerificationStatus("AGENT_CAPTURED");
-    }
+    setLocationVerificationStatus("BUSINESS_CONFIRMED");
   };
 
   // GPS Location Capture via Browser Geolocation API
@@ -531,7 +529,7 @@ export function SmartLocationForm({
         setHasConfirmedCoordinates(true);
         setLocationAccuracy(Math.round(accuracy));
         setLocationSource("GPS_DEVICE");
-        setLocationVerificationStatus("AGENT_CAPTURED");
+        setLocationVerificationStatus(accuracy <= 50 ? "AGENT_CAPTURED" : "UNVERIFIED");
         setPinManuallyAdjusted(true);
         setIsCapturingGps(false);
       },

@@ -148,9 +148,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const locSource: LocationSource = hasGps ? LocationSource.GPS_DEVICE : (coordinatesConfirmed ? LocationSource.MAP_SELECTION : LocationSource.OWNER_REPORTED);
-    const locVerification: LocationVerificationStatus = (hasGps || coordinatesConfirmed) ? LocationVerificationStatus.AGENT_CAPTURED : LocationVerificationStatus.UNVERIFIED;
-    const accuracy = hasGps ? Number(locationAccuracy) : null;
     const resolvedProvinceId = body.provinceId || null;
     let resolvedDistrictId = body.districtId || null;
     let resolvedSectorId = body.sectorId || null;
@@ -159,6 +156,7 @@ export async function POST(request: Request) {
     // Resolve geographic entities dynamically to guarantee accurate linking
     let resolvedLat = hasCoordinates ? Number(latitude) : null;
     let resolvedLng = hasCoordinates ? Number(longitude) : null;
+    let isCentroidAssigned = false;
 
     if (sector && typeof sector === "string") {
       const cleanSectorName = sector.trim();
@@ -172,6 +170,7 @@ export async function POST(request: Request) {
         if (resolvedLat === null || resolvedLng === null || isCountryHubCoord) {
           resolvedLat = dbSector.latitude;
           resolvedLng = dbSector.longitude;
+          isCentroidAssigned = true;
         }
       }
     }
@@ -186,6 +185,7 @@ export async function POST(request: Request) {
         if (resolvedLat === null || resolvedLng === null) {
           resolvedLat = dbDistrict.latitude;
           resolvedLng = dbDistrict.longitude;
+          isCentroidAssigned = true;
         }
       }
     }
@@ -203,11 +203,36 @@ export async function POST(request: Request) {
       }
     }
 
+    // Precise separation: Real GPS device vs manual pin adjustment vs text address/centroid fallback
+    // Entering a landmark or directions confirms address presence but MUST NOT falsely certify exact GPS coordinates
+    const hasExactGps = hasCoordinates && typeof locationAccuracy === "number" && locationAccuracy > 0 && locationAccuracy <= 50;
+    const isManualPin = Boolean(body.pinManuallyAdjusted || body.locationSource === "MAP_SELECTION" || body.locationSource === "AGENT_PIN") && !isCountryHubCoord;
+
+    let locSource: LocationSource;
+    let locVerification: LocationVerificationStatus;
+
+    if (hasExactGps && !isCentroidAssigned) {
+      locSource = LocationSource.GPS_DEVICE;
+      locVerification = LocationVerificationStatus.AGENT_CAPTURED;
+    } else if (isManualPin && !isCentroidAssigned) {
+      locSource = LocationSource.MAP_SELECTION;
+      locVerification = LocationVerificationStatus.BUSINESS_CONFIRMED;
+    } else {
+      // Landmark, directions, text address, or sector/district centroid fallback
+      locSource = LocationSource.OWNER_REPORTED;
+      locVerification = LocationVerificationStatus.UNVERIFIED;
+    }
+    const accuracy = (hasExactGps && !isCentroidAssigned) ? Number(locationAccuracy) : null;
+
     const regProvince = province && typeof province === "string" ? province.trim() : null;
     let computedAddressNote = localArea?.trim() || null;
     if (!isRw) {
       const prefix = `[Country: ${countryConfig.name}${regProvince ? ` | Region: ${regProvince}` : ""}]`;
       computedAddressNote = computedAddressNote ? `${prefix} ${computedAddressNote}` : prefix;
+    }
+    if (isCentroidAssigned || (!hasExactGps && !isManualPin)) {
+      const precisionTag = "[Precision: Approximate Area / Landmark Reference - Pending Exact GPS Audit]";
+      computedAddressNote = computedAddressNote ? `${precisionTag} ${computedAddressNote}` : precisionTag;
     }
 
     if (resolvedLat === null || resolvedLng === null) {

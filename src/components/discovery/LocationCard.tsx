@@ -44,14 +44,23 @@ export function LocationCard({ business, lang = "en" }: LocationCardProps) {
     business.locationVerificationStatus === "BUSINESS_CONFIRMED" ? "Business Owner Confirmed" :
     business.locationVerificationStatus === "COMMUNITY_VERIFIED" ? "Community Verified" : "Location Unverified";
 
-  // Breadcrumb path
-  const hierarchyPath = [
-    loc?.province || "Kigali City",
-    loc?.district || "Gasabo",
-    loc?.sector || "Kacyiru",
-    loc?.cell || "Kamutwa",
-    business.localArea?.name,
-  ].filter(Boolean);
+  // Breadcrumb path (strictly country-aware)
+  const isRw = !loc?.country || loc.country.toLowerCase() === "rwanda";
+  const hierarchyPath = isRw
+    ? [
+        loc?.province || "City of Kigali",
+        loc?.district || "Gasabo",
+        loc?.sector || "Kacyiru",
+        loc?.cell || "Kamutwa",
+        business.localArea?.name,
+      ].filter(Boolean)
+    : [
+        loc?.country,
+        loc?.province,
+        loc?.district,
+        loc?.sector,
+        business.localArea?.name,
+      ].filter(Boolean);
 
   const directionsUrl = getGoogleMapsDirectionsUrl(lat, lng);
 
