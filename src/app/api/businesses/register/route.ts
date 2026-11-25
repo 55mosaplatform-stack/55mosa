@@ -326,9 +326,7 @@ export async function POST(request: Request) {
         for (const p of products) {
           if (p.name && p.name.trim()) {
             const hasMedia = Boolean(p.mediaUrl && p.mediaUrl.trim());
-            if (hasMedia && (!p.mediaCaption || !p.mediaCaption.trim())) {
-              throw new Error(`Media caption is required for item "${p.name.trim()}". Every uploaded image, file, or video must have an associated caption.`);
-            }
+            const resolvedCaption = hasMedia ? (p.mediaCaption?.trim() || p.name.trim() || "Item image") : null;
 
             const itemPrice = Number(p.price) || 0;
             const minP = p.priceMin !== undefined && p.priceMin !== null && p.priceMin !== "" ? Number(p.priceMin) : itemPrice;
@@ -355,7 +353,7 @@ export async function POST(request: Request) {
                 isAvailable: true,
                 mediaUrl: hasMedia ? p.mediaUrl.trim() : null,
                 mediaType: hasMedia ? (p.mediaType || "IMAGE") : "IMAGE",
-                mediaCaption: hasMedia ? p.mediaCaption.trim() : null,
+                mediaCaption: resolvedCaption,
               },
             });
           }
