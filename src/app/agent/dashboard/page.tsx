@@ -405,7 +405,7 @@ export default function AgentDashboardPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Est. Price Range (RWF)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Estimated Price Range (RWF)</label>
                 <div className="flex items-center gap-1">
                   <input
                     type="number"

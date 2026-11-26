@@ -13,12 +13,15 @@ import {
   Search,
   Sparkles,
   Sliders,
-  ExternalLink
+  ExternalLink,
+  Building2
 } from "lucide-react";
 import { MosaMap } from "@/components/discovery/MosaMap";
 import { haversineDistance, checkNearDuplicates } from "@/lib/location-quality";
 import { LocationSource, LocationVerificationStatus } from "@/types";
 import { getCountryConfig, GLOBAL_COUNTRY_CONFIGS } from "@/lib/country-address-config";
+import { RWANDA_HIERARCHY } from "@/lib/rwanda-geo";
+import { VERIFIED_COMMERCIAL_PREMISES, VerifiedCommercialPremises } from "@/lib/geocoding";
 
 export const SUPPORTED_COUNTRIES = [
   { code: "RW", name: "Rwanda", flag: "🇷🇼" },
@@ -73,6 +76,46 @@ interface SmartLocationFormProps {
   errors?: Record<string, string>;
 }
 
+export function buildClientFallbackTree() {
+  return Object.entries(RWANDA_HIERARCHY).map(([pKey, pVal]) => ({
+    id: `rw-prov-${pKey}`,
+    code: pKey.toUpperCase(),
+    name: pVal.name,
+    nameRw: pVal.nameRw,
+    districts: Object.entries(pVal.districts).map(([dKey, dVal]) => ({
+      id: `rw-dist-${dKey}`,
+      code: dKey.toUpperCase(),
+      name: dVal.name,
+      nameRw: dVal.nameRw,
+      sectors: Object.entries(dVal.sectors).map(([sKey, sVal]) => ({
+        id: `rw-sect-${sKey}`,
+        code: `${dKey.toUpperCase()}_${sKey.toUpperCase()}`,
+        name: sVal.name,
+        nameRw: sVal.nameRw,
+        cells: Object.entries(sVal.cells).map(([cKey, cVal]) => ({
+          id: `rw-cell-${cKey}`,
+          name: cVal.name,
+          nameRw: cVal.nameRw,
+          localAreas: (cVal.communities || []).map((comm) => ({
+            id: `rw-area-${comm.code}`,
+            name: comm.name,
+            nameRw: comm.nameRw,
+            latitude: comm.lat,
+            longitude: comm.lng,
+          })),
+        })),
+      })),
+    })),
+  }));
+}
+
+export const normalizeGeoName = (str?: string) =>
+  (str || "")
+    .toLowerCase()
+    .replace(/city of|province|intara y['’]|umujyi wa/gi, "")
+    .replace(/[^a-z0-9]/gi, "")
+    .trim();
+
 export function SmartLocationForm({
   initialValues,
   businessName = "",
@@ -81,9 +124,9 @@ export function SmartLocationForm({
   existingBusinesses = [],
   errors = {},
 }: SmartLocationFormProps) {
-  // Geographic hierarchy tree from /api/geo
-  const [geoTree, setGeoTree] = useState<any[]>([]);
-  const [loadingGeo, setLoadingGeo] = useState(true);
+  // Geographic hierarchy tree pre-initialized synchronously with full authoritative tree so dropdowns are NEVER blank
+  const [geoTree, setGeoTree] = useState<any[]>(() => buildClientFallbackTree());
+  const [loadingGeo, setLoadingGeo] = useState(false);
 
   // Administrative hierarchy states
   const initialCountry = initialValues?.country || "Rwanda";
@@ -92,13 +135,13 @@ export function SmartLocationForm({
   const [country, setCountry] = useState(initialCountry);
   const currentCountryConfig = getCountryConfig(country);
 
-  const [province, setProvince] = useState(initialValues?.province || (country === "Rwanda" ? "City of Kigali" : ""));
+  const [province, setProvince] = useState(initialValues?.province || (country === "Rwanda" ? "Kigali City" : ""));
   const [provinceId, setProvinceId] = useState(initialValues?.provinceId || "");
-  const [district, setDistrict] = useState(initialValues?.district || (country === "Rwanda" ? "Gasabo" : ""));
+  const [district, setDistrict] = useState(initialValues?.district || (country === "Rwanda" ? "Nyarugenge" : ""));
   const [districtId, setDistrictId] = useState(initialValues?.districtId || "");
-  const [sector, setSector] = useState(initialValues?.sector || (country === "Rwanda" ? "Kacyiru" : ""));
+  const [sector, setSector] = useState(initialValues?.sector || (country === "Rwanda" ? "Nyarugenge" : ""));
   const [sectorId, setSectorId] = useState(initialValues?.sectorId || "");
-  const [cell, setCell] = useState(initialValues?.cell || (country === "Rwanda" ? "Kamutwa" : ""));
+  const [cell, setCell] = useState(initialValues?.cell || (country === "Rwanda" ? "Kiyovu" : ""));
   const [cellId, setCellId] = useState(initialValues?.cellId || "");
   const [village, setVillage] = useState(initialValues?.village || "");
   const [localAreaId, setLocalAreaId] = useState(initialValues?.localAreaId || "");
@@ -305,21 +348,171 @@ export function SmartLocationForm({
       .catch(() => {});
   }, []);
 
-  // Compute available districts for selected province
-  const currentProvinceObj = geoTree.find((p) => p.id === provinceId || p.name === province);
-  const availableDistricts = currentProvinceObj?.districts || [];
+  // Compute available districts for selected province with normalized robust matching
+  const currentProvinceObj = React.useMemo(() => {
+    if (!geoTree || geoTree.length === 0) return null;
+    if (provinceId) {
+      const match = geoTree.find((p: any) => p.id === provinceId);
+      if (match) return match;
+    }
+    if (province) {
+      const normP = normalizeGeoName(province);
+      const match = geoTree.find(
+        (p: any) =>
+          normalizeGeoName(p.name) === normP ||
+          normalizeGeoName(p.nameRw) === normP ||
+          normalizeGeoName(p.code) === normP ||
+          normalizeGeoName(p.name).includes(normP) ||
+          normP.includes(normalizeGeoName(p.name))
+      );
+      if (match) return match;
+    }
+    return geoTree.find((p: any) => normalizeGeoName(p.name).includes("kigali")) || geoTree[0] || null;
+  }, [geoTree, provinceId, province]);
+
+  const availableDistricts = React.useMemo(() => {
+    return currentProvinceObj?.districts || [];
+  }, [currentProvinceObj]);
 
   // Compute available sectors for selected district
-  const currentDistrictObj = availableDistricts.find((d: any) => d.id === districtId || d.name === district);
-  const availableSectors = currentDistrictObj?.sectors || [];
+  const currentDistrictObj = React.useMemo(() => {
+    if (!availableDistricts || availableDistricts.length === 0) return null;
+    if (districtId) {
+      const match = availableDistricts.find((d: any) => d.id === districtId);
+      if (match) return match;
+    }
+    if (district) {
+      const normD = normalizeGeoName(district);
+      const match = availableDistricts.find(
+        (d: any) =>
+          normalizeGeoName(d.name) === normD ||
+          normalizeGeoName(d.nameRw) === normD ||
+          normalizeGeoName(d.code) === normD ||
+          normalizeGeoName(d.name).includes(normD) ||
+          normD.includes(normalizeGeoName(d.name))
+      );
+      if (match) return match;
+    }
+    return availableDistricts[0] || null;
+  }, [availableDistricts, districtId, district]);
+
+  const availableSectors = React.useMemo(() => {
+    return currentDistrictObj?.sectors || [];
+  }, [currentDistrictObj]);
 
   // Compute available cells for selected sector
-  const currentSectorObj = availableSectors.find((s: any) => s.id === sectorId || s.name === sector);
-  const availableCells = currentSectorObj?.cells || [];
+  const currentSectorObj = React.useMemo(() => {
+    if (!availableSectors || availableSectors.length === 0) return null;
+    if (sectorId) {
+      const match = availableSectors.find((s: any) => s.id === sectorId);
+      if (match) return match;
+    }
+    if (sector) {
+      const normS = normalizeGeoName(sector);
+      const match = availableSectors.find(
+        (s: any) =>
+          normalizeGeoName(s.name) === normS ||
+          normalizeGeoName(s.nameRw) === normS ||
+          normalizeGeoName(s.name).includes(normS) ||
+          normS.includes(normalizeGeoName(s.name))
+      );
+      if (match) return match;
+    }
+    return availableSectors[0] || null;
+  }, [availableSectors, sectorId, sector]);
+
+  const availableCells = React.useMemo(() => {
+    return currentSectorObj?.cells || [];
+  }, [currentSectorObj]);
 
   // Compute available local areas for selected cell/sector
-  const currentCellObj = availableCells.find((c: any) => c.id === cellId || c.name === cell);
-  const availableLocalAreas = currentCellObj?.localAreas || [];
+  const currentCellObj = React.useMemo(() => {
+    if (!availableCells || availableCells.length === 0) return null;
+    if (cellId) {
+      const match = availableCells.find((c: any) => c.id === cellId);
+      if (match) return match;
+    }
+    if (cell) {
+      const normC = normalizeGeoName(cell);
+      const match = availableCells.find(
+        (c: any) =>
+          normalizeGeoName(c.name) === normC ||
+          normalizeGeoName(c.nameRw) === normC ||
+          normalizeGeoName(c.name).includes(normC) ||
+          normC.includes(normalizeGeoName(c.name))
+      );
+      if (match) return match;
+    }
+    return availableCells[0] || null;
+  }, [availableCells, cellId, cell]);
+
+  const availableLocalAreas = React.useMemo(() => {
+    return currentCellObj?.localAreas || [];
+  }, [currentCellObj]);
+
+  // 1-Click Apply Verified Commercial Premises / Shared Building Location
+  const handleSelectVerifiedPremises = (premises: VerifiedCommercialPremises) => {
+    setCountry(premises.country);
+    setProvince(premises.province);
+    setDistrict(premises.district);
+    setSector(premises.sector);
+    setCell(premises.cell);
+    setStreetName(premises.streetName);
+    setNearestLandmark(premises.nearestLandmark);
+    setLocationDescription(premises.locationDescription);
+    setSearchQuery(premises.name);
+    setLatitude(premises.lat);
+    setLongitude(premises.lng);
+    setMapCenter({ lat: premises.lat, lng: premises.lng });
+    setHasConfirmedCoordinates(true);
+    setLocationSource("MAP_SELECTION");
+    setLocationVerificationStatus("BUSINESS_CONFIRMED");
+    setPinManuallyAdjusted(true);
+    setEstimatedLocation({
+      matchedPlace: premises.name,
+      confidence: "HIGH",
+      source: "verified_commercial_premises",
+    });
+
+    if (geoTree && geoTree.length > 0) {
+      const normP = normalizeGeoName(premises.province);
+      const matchedP = geoTree.find(
+        (p: any) =>
+          normalizeGeoName(p.name).includes(normP) ||
+          normP.includes(normalizeGeoName(p.name))
+      );
+      if (matchedP) {
+        setProvinceId(matchedP.id);
+        const normD = normalizeGeoName(premises.district);
+        const matchedD = matchedP.districts?.find(
+          (d: any) =>
+            normalizeGeoName(d.name).includes(normD) ||
+            normD.includes(normalizeGeoName(d.name))
+        );
+        if (matchedD) {
+          setDistrictId(matchedD.id);
+          const normS = normalizeGeoName(premises.sector);
+          const matchedS = matchedD.sectors?.find(
+            (s: any) =>
+              normalizeGeoName(s.name).includes(normS) ||
+              normS.includes(normalizeGeoName(s.name))
+          );
+          if (matchedS) {
+            setSectorId(matchedS.id);
+            const normC = normalizeGeoName(premises.cell);
+            const matchedC = matchedS.cells?.find(
+              (c: any) =>
+                normalizeGeoName(c.name).includes(normC) ||
+                normC.includes(normalizeGeoName(c.name))
+            );
+            if (matchedC) {
+              setCellId(matchedC.id);
+            }
+          }
+        }
+      }
+    }
+  };
 
   // Cascade handlers
   const handleCountryChange = (selectedCountryName: string) => {
@@ -372,18 +565,18 @@ export function SmartLocationForm({
 
   const handleProvinceChange = (pId: string) => {
     setProvinceId(pId);
-    const p = geoTree.find((item) => item.id === pId);
+    const p = geoTree.find((item: any) => item.id === pId) || geoTree[0];
     if (p) {
       setProvince(p.name);
-      const firstDist = p.districts[0];
+      const firstDist = p.districts?.[0];
       if (firstDist) {
         setDistrictId(firstDist.id);
         setDistrict(firstDist.name);
-        const firstSec = firstDist.sectors[0];
+        const firstSec = firstDist.sectors?.[0];
         if (firstSec) {
           setSectorId(firstSec.id);
           setSector(firstSec.name);
-          const firstCell = firstSec.cells[0];
+          const firstCell = firstSec.cells?.[0];
           if (firstCell) {
             setCellId(firstCell.id);
             setCell(firstCell.name);
@@ -395,14 +588,14 @@ export function SmartLocationForm({
 
   const handleDistrictChange = (dId: string) => {
     setDistrictId(dId);
-    const d = availableDistricts.find((item: any) => item.id === dId);
+    const d = availableDistricts.find((item: any) => item.id === dId) || availableDistricts[0];
     if (d) {
       setDistrict(d.name);
-      const firstSec = d.sectors[0];
+      const firstSec = d.sectors?.[0];
       if (firstSec) {
         setSectorId(firstSec.id);
         setSector(firstSec.name);
-        const firstCell = firstSec.cells[0];
+        const firstCell = firstSec.cells?.[0];
         if (firstCell) {
           setCellId(firstCell.id);
           setCell(firstCell.name);
@@ -413,7 +606,7 @@ export function SmartLocationForm({
 
   const handleSectorChange = (sId: string) => {
     setSectorId(sId);
-    const s = availableSectors.find((item: any) => item.id === sId);
+    const s = availableSectors.find((item: any) => item.id === sId) || availableSectors[0];
     if (s) {
       setSector(s.name);
       if (s.latitude && s.longitude) {
@@ -422,7 +615,7 @@ export function SmartLocationForm({
         setMapCenter({ lat: s.latitude, lng: s.longitude });
         setHasConfirmedCoordinates(true);
       }
-      const firstCell = s.cells[0];
+      const firstCell = s.cells?.[0];
       if (firstCell) {
         setCellId(firstCell.id);
         setCell(firstCell.name);
@@ -432,7 +625,7 @@ export function SmartLocationForm({
 
   const handleCellChange = (cId: string) => {
     setCellId(cId);
-    const c = availableCells.find((item: any) => item.id === cId);
+    const c = availableCells.find((item: any) => item.id === cId) || availableCells[0];
     if (c) {
       setCell(c.name);
       if (c.latitude && c.longitude) {
@@ -668,6 +861,42 @@ export function SmartLocationForm({
                 <span>Locate on Map</span>
               </button>
             )}
+          </div>
+        </div>
+
+        {/* Verified Commercial Premises & Shared Building Shortcuts */}
+        <div className="pt-1">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+              <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Popular Verified Commercial Premises & Shared Buildings:</span>
+            </span>
+            <span className="text-[10px] text-slate-500">1-click verified coordinates</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {VERIFIED_COMMERCIAL_PREMISES.filter(
+              (p) => !country || p.country.toLowerCase() === country.toLowerCase()
+            ).map((premises) => {
+              const isSelected =
+                locationDescription?.toLowerCase().includes("chic") && premises.id === "premises-chic" ||
+                searchQuery?.toLowerCase().includes(premises.name.toLowerCase().slice(0, 8));
+              return (
+                <button
+                  key={premises.id}
+                  type="button"
+                  onClick={() => handleSelectVerifiedPremises(premises)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+                    isSelected
+                      ? "bg-emerald-700 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-300"
+                      : "bg-white hover:bg-emerald-50 text-slate-800 border-emerald-300/80 hover:border-emerald-500 shadow-2xs"
+                  }`}
+                  title={`${premises.name} — ${premises.description}`}
+                >
+                  <Building2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                  <span>{premises.name}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -963,12 +1192,13 @@ export function SmartLocationForm({
                   Province / City <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={provinceId}
+                  value={provinceId || currentProvinceObj?.id || ""}
                   onChange={(e) => handleProvinceChange(e.target.value)}
                   className={`w-full p-2 rounded-xl border font-medium outline-none transition-colors ${
                     errors?.province ? "border-rose-400 bg-rose-50/30 ring-2 ring-rose-200" : "border-slate-300 bg-white"
                   }`}
                 >
+                  <option value="">Select Province / City...</option>
                   {geoTree.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
@@ -984,12 +1214,13 @@ export function SmartLocationForm({
                   District <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={districtId}
+                  value={districtId || currentDistrictObj?.id || ""}
                   onChange={(e) => handleDistrictChange(e.target.value)}
                   className={`w-full p-2 rounded-xl border font-medium outline-none transition-colors ${
                     errors?.district ? "border-rose-400 bg-rose-50/30 ring-2 ring-rose-200" : "border-slate-300 bg-white"
                   }`}
                 >
+                  <option value="">{availableDistricts.length === 0 ? "Select Province first..." : "Select District..."}</option>
                   {availableDistricts.map((d: any) => (
                     <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
@@ -1008,12 +1239,13 @@ export function SmartLocationForm({
                   Sector <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={sectorId}
+                  value={sectorId || currentSectorObj?.id || ""}
                   onChange={(e) => handleSectorChange(e.target.value)}
                   className={`w-full p-2 rounded-xl border font-medium outline-none transition-colors ${
                     errors?.sector ? "border-rose-400 bg-rose-50/30 ring-2 ring-rose-200" : "border-slate-300 bg-white"
                   }`}
                 >
+                  <option value="">{availableSectors.length === 0 ? "Select District first..." : "Select Sector..."}</option>
                   {availableSectors.map((s: any) => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
@@ -1029,12 +1261,13 @@ export function SmartLocationForm({
                   Cell <span className="text-red-500">*</span>
                 </label>
                 <select
-                  value={cellId}
+                  value={cellId || currentCellObj?.id || ""}
                   onChange={(e) => handleCellChange(e.target.value)}
                   className={`w-full p-2 rounded-xl border font-medium outline-none transition-colors ${
                     errors?.cell ? "border-rose-400 bg-rose-50/30 ring-2 ring-rose-200" : "border-slate-300 bg-white"
                   }`}
                 >
+                  <option value="">{availableCells.length === 0 ? "Select Sector first..." : "Select Cell..."}</option>
                   {availableCells.map((c: any) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}

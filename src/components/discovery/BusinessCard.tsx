@@ -243,13 +243,23 @@ export function BusinessCard({ business, variant = "standard", className = "" }:
                         {lang === "rw" && prod.nameRw ? prod.nameRw : prod.name}
                       </span>
                     </div>
-                    <span className="font-bold text-slate-950 shrink-0 text-xs">
-                      {prod.isEstimated || prod.priceType === "ESTIMATED" ? "~" : ""}
-                      {prod.priceMin && prod.priceMax
-                        ? `${prod.priceMin.toLocaleString()} - ${prod.priceMax.toLocaleString()} ${prod.currency || "Frw"}`
-                        : `${prod.price.toLocaleString()} ${prod.currency || "Frw"}`}
-                      {(prod.isEstimated || prod.priceType === "ESTIMATED") && <span className="text-[10px] text-slate-400 ml-1 font-normal">(Est.)</span>}
-                    </span>
+                    {Boolean(prod.price === 0 || (!prod.price && !prod.priceMin) || (prod as any).contactForPrice) ? (
+                      <span className="font-bold text-emerald-700 text-xs bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 shrink-0">
+                        {lang === "rw" ? "Baza Igiciro" : "Call for Price"}
+                      </span>
+                    ) : (
+                      <span className="font-bold text-slate-950 shrink-0 text-xs">
+                        {prod.isEstimated || prod.priceType === "ESTIMATED" ? "~" : ""}
+                        {prod.priceMin && prod.priceMax
+                          ? `${prod.priceMin.toLocaleString()} - ${prod.priceMax.toLocaleString()} ${prod.currency || "Frw"}`
+                          : `${prod.price.toLocaleString()} ${prod.currency || "Frw"}`}
+                        {(prod.isEstimated || prod.priceType === "ESTIMATED") && (
+                          <span className="text-[10px] text-amber-700 ml-1 font-semibold">
+                            {lang === "rw" ? "(Igiciro kigereranyije)" : "(Estimated Price)"}
+                          </span>
+                        )}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>

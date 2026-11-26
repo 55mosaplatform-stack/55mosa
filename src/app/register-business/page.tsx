@@ -59,7 +59,9 @@ import {
   Shield,
   Printer,
   Baby,
-  MoreHorizontal
+  MoreHorizontal,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import {
   CANONICAL_TAXONOMY,
@@ -153,6 +155,7 @@ export default function RegisterBusinessPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [showPassword, setShowPassword] = useState(false);
 
   // Step 5 Registration Payment & Instant Activation states
   const [registeredBusinessId, setRegisteredBusinessId] = useState<string | null>(null);
@@ -199,6 +202,7 @@ export default function RegisterBusinessPage() {
   const [categorySearchQuery, setCategorySearchQuery] = useState("");
   const [dismissedSuggestion, setDismissedSuggestion] = useState(false);
   const [customActivityInput, setCustomActivityInput] = useState("");
+  const [showSecondaryActivities, setShowSecondaryActivities] = useState(false);
 
   // Media upload refs & states
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -209,16 +213,16 @@ export default function RegisterBusinessPage() {
   // Section 2: Location Data
   const [locationData, setLocationData] = useState<SmartLocationFormData>({
     country: "Rwanda",
-    province: "City of Kigali",
-    district: "Gasabo",
-    sector: "Kacyiru",
-    cell: "Kamutwa",
+    province: "Kigali City",
+    district: "Nyarugenge",
+    sector: "Nyarugenge",
+    cell: "Kiyovu",
     nearestLandmark: "",
     streetName: "",
     nearbyPlace: "",
     locationDescription: "",
-    latitude: -1.9365,
-    longitude: 30.0868,
+    latitude: -1.9448,
+    longitude: 30.0583,
     locationSource: "OWNER_REPORTED",
     locationVerificationStatus: "UNVERIFIED",
     hasConfirmedCoordinates: false,
@@ -585,10 +589,39 @@ export default function RegisterBusinessPage() {
     }
   };
 
+  // Format phone number with country prefix if not already present
+  const formatPhoneWithCountry = (phoneStr: string, countryPrefix: string = countryConfig.phonePrefix) => {
+    const cleaned = phoneStr.trim().replace(/[\s\-\(\)]+/g, "");
+    if (!cleaned) return "";
+    if (cleaned.startsWith("+")) return cleaned;
+    if (cleaned.startsWith("00")) return "+" + cleaned.slice(2);
+    const prefixDigits = countryPrefix.replace(/^\+/, "");
+
+    // If user typed the prefix without '+', e.g. '250788123456' or '254712345678'
+    if (cleaned.startsWith(prefixDigits)) {
+      return "+" + cleaned;
+    }
+
+    // Rwanda special handling: standard local 07X or 7X
+    if (countryPrefix === "+250") {
+      if (/^0(78|79|72|73)\d{7}$/.test(cleaned)) return cleaned;
+      if (/^(78|79|72|73)\d{7}$/.test(cleaned)) return "0" + cleaned;
+    }
+
+    // If starts with single 0 (national format like 0712345678 or 020...), strip leading 0 and attach prefix
+    if (cleaned.startsWith("0")) {
+      return countryPrefix + cleaned.slice(1);
+    }
+
+    // Otherwise attach prefix
+    return countryPrefix + cleaned;
+  };
+
   // Universal phone validator supporting Rwanda local and international E.164 formats worldwide
-  const isValidPhoneNumber = (num: string) => {
-    const cleaned = num.replace(/[\s\-\(\)\.]+/g, "");
-    if (!cleaned) return false;
+  const isValidPhoneNumber = (num: string, prefix: string = countryConfig.phonePrefix) => {
+    const formatted = formatPhoneWithCountry(num, prefix);
+    if (!formatted) return false;
+    const cleaned = formatted.replace(/[\s\-\(\)\.]+/g, "");
     // Rwanda formats: 078/079/072/073 or +250...
     if (/^(\+?250)?(78|79|72|73)\d{7}$/.test(cleaned) || /^0(78|79|72|73)\d{7}$/.test(cleaned)) {
       return true;
@@ -895,9 +928,10 @@ export default function RegisterBusinessPage() {
           mediaCaption: p.mediaCaption?.trim() || p.name.trim() || "Showcase item",
         }));
 
+      const formattedPrimaryPhone = formatPhoneWithCountry(formData.phone.trim(), countryConfig.phonePrefix);
       const effectiveWhatsapp = formData.hasDifferentWhatsapp && formData.whatsapp.trim()
-        ? formData.whatsapp.trim()
-        : formData.phone.trim();
+        ? formatPhoneWithCountry(formData.whatsapp.trim(), countryConfig.phonePrefix)
+        : formattedPrimaryPhone;
 
       const payload = {
         name: formData.name.trim(),
@@ -910,7 +944,7 @@ export default function RegisterBusinessPage() {
         secondaryActivities: formData.secondaryActivities,
         description: formData.description.trim(),
         ownerName: formData.ownerName.trim(),
-        phone: formData.phone.trim(),
+        phone: formattedPrimaryPhone,
         whatsapp: effectiveWhatsapp,
         email: formData.email.trim() || undefined,
         password: formData.password,
@@ -956,7 +990,7 @@ export default function RegisterBusinessPage() {
         if ("PasswordCredential" in window && navigator.credentials) {
           try {
             const cred = new (window as any).PasswordCredential({
-              id: formData.phone.trim(),
+              id: formattedPrimaryPhone,
               password: formData.password,
               name: formData.ownerName.trim(),
             });
@@ -995,7 +1029,7 @@ export default function RegisterBusinessPage() {
           body: JSON.stringify({
             businessId: createdBizId,
             provider: primaryProvider,
-            phoneNumber: formData.phone.trim(),
+            phoneNumber: formattedPrimaryPhone,
           }),
         });
         const initData = await initRes.json();
@@ -1131,7 +1165,7 @@ export default function RegisterBusinessPage() {
                 {step > 4 ? <CheckCircle2 className="w-4 h-4" /> : "4"}
               </button>
               <span className={`text-xs font-bold hidden sm:inline ${step === 4 ? "text-slate-900" : "text-slate-500"}`}>
-                Presentation
+                Showcase (Optional)
               </span>
             </div>
 
@@ -1142,7 +1176,7 @@ export default function RegisterBusinessPage() {
               <button
                 type="button"
                 onClick={() => {
-                  if (validateStep1() && validateStep2() && validateStep3() && validateStep4()) setStep(5);
+                  if (validateStep1() && validateStep2() && validateStep3()) setStep(5);
                 }}
                 className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs cursor-pointer ${
                   step === 5
@@ -1430,86 +1464,115 @@ export default function RegisterBusinessPage() {
                 )}
               </div>
 
-              {/* Secondary Business Activities (Multi-Activity Tagging) */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-800">
-                    Secondary Business Activities & Services <span className="text-slate-400 font-normal">(Optional)</span>
-                  </label>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Select additional commercial capabilities your business offers to appear in broader customer searches.
-                  </p>
-                </div>
-
-                {/* Suggested Activity Chips */}
-                <div className="flex flex-wrap gap-2">
-                  {SUGGESTED_SECONDARY_ACTIVITIES.map((act) => {
-                    const isSelected = formData.secondaryActivities.includes(act.label);
-                    return (
-                      <button
-                        key={act.id}
-                        type="button"
-                        onClick={() => toggleSecondaryActivity(act.label)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                          isSelected
-                            ? "bg-emerald-600 text-white shadow-xs"
-                            : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
-                        }`}
-                      >
-                        <span>{act.icon}</span>
-                        <span>{lang === "rw" ? act.labelRw : act.label}</span>
-                        {isSelected && <Check className="w-3 h-3 ml-0.5" />}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Custom Secondary Activity Tag Input */}
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="text"
-                    placeholder="Add custom activity (e.g. Free Wi-Fi, Outdoor Garden Seating)..."
-                    value={customActivityInput}
-                    onChange={(e) => setCustomActivityInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addCustomSecondaryActivity();
-                      }
-                    }}
-                    className="flex-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-medium outline-none focus:border-emerald-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={addCustomSecondaryActivity}
-                    className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs cursor-pointer"
-                  >
-                    Add
-                  </button>
-                </div>
-
-                {/* Active Custom Tags */}
-                {formData.secondaryActivities.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Tags:</span>
-                    {formData.secondaryActivities.map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold border border-emerald-200"
-                      >
-                        <span>{tag}</span>
-                        <button
-                          type="button"
-                          onClick={() => toggleSecondaryActivity(tag)}
-                          className="hover:text-rose-600 ml-0.5 cursor-pointer"
-                        >
-                          &times;
-                        </button>
-                      </span>
-                    ))}
+              {/* Secondary Business Activities (Multi-Activity Tagging) - Progressive Disclosure */}
+              {!showSecondaryActivities && formData.secondaryActivities.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setShowSecondaryActivities(true)}
+                  className="w-full py-2.5 px-3.5 rounded-2xl border border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50/40 text-slate-600 hover:text-emerald-800 transition-all text-xs font-bold flex items-center justify-between group cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-lg bg-slate-200 group-hover:bg-emerald-200 text-slate-700 group-hover:text-emerald-900 flex items-center justify-center text-xs font-black">
+                      +
+                    </span>
+                    <span>Add Secondary Business Activities & Services (Optional)</span>
                   </div>
-                )}
-              </div>
+                  <span className="text-[11px] text-slate-400 group-hover:text-emerald-700 font-medium">
+                    Expand tags
+                  </span>
+                </button>
+              ) : (
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800">
+                        Secondary Business Activities & Services <span className="text-slate-400 font-normal">(Optional)</span>
+                      </label>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Select additional commercial capabilities your business offers to appear in broader customer searches.
+                      </p>
+                    </div>
+                    {formData.secondaryActivities.length === 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowSecondaryActivities(false)}
+                        className="text-xs text-slate-400 hover:text-slate-600 font-medium cursor-pointer"
+                      >
+                        Hide
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Suggested Activity Chips */}
+                  <div className="flex flex-wrap gap-2">
+                    {SUGGESTED_SECONDARY_ACTIVITIES.map((act) => {
+                      const isSelected = formData.secondaryActivities.includes(act.label);
+                      return (
+                        <button
+                          key={act.id}
+                          type="button"
+                          onClick={() => toggleSecondaryActivity(act.label)}
+                          className={`px-3 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                            isSelected
+                              ? "bg-emerald-600 text-white shadow-xs"
+                              : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
+                          }`}
+                        >
+                          <span>{act.icon}</span>
+                          <span>{lang === "rw" ? act.labelRw : act.label}</span>
+                          {isSelected && <Check className="w-3 h-3 ml-0.5" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Custom Secondary Activity Tag Input */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="text"
+                      placeholder="Add custom activity (e.g. Free Wi-Fi, Outdoor Garden Seating)..."
+                      value={customActivityInput}
+                      onChange={(e) => setCustomActivityInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addCustomSecondaryActivity();
+                        }
+                      }}
+                      className="flex-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-medium outline-none focus:border-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={addCustomSecondaryActivity}
+                      className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs cursor-pointer"
+                    >
+                      Add
+                    </button>
+                  </div>
+
+                  {/* Active Custom Tags */}
+                  {formData.secondaryActivities.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Tags:</span>
+                      {formData.secondaryActivities.map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold border border-emerald-200"
+                        >
+                          <span>{tag}</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleSecondaryActivity(tag)}
+                            className="hover:text-rose-600 ml-0.5 cursor-pointer"
+                          >
+                            &times;
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Step 1 Actions */}
@@ -1619,10 +1682,11 @@ export default function RegisterBusinessPage() {
                   Owner / Representative Full Name <span className="text-rose-600">*</span>
                 </label>
                 <div className="relative">
-                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
                   <input
                     type="text"
                     required
+                    autoComplete="name"
                     placeholder="e.g., Janvier Nkurunziza, Sarah Jenkins"
                     value={formData.ownerName}
                     onChange={(e) => {
@@ -1630,7 +1694,7 @@ export default function RegisterBusinessPage() {
                       if (fieldErrors.ownerName) setFieldErrors({ ...fieldErrors, ownerName: "" });
                     }}
                     className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm font-medium outline-none transition-colors ${
-                      fieldErrors.ownerName ? "border-rose-400 bg-rose-50/30" : "border-slate-300 focus:border-emerald-500"
+                      fieldErrors.ownerName ? "border-rose-400 bg-rose-50/30" : "border-slate-300 focus:border-emerald-500 focus:bg-white"
                     }`}
                   />
                 </div>
@@ -1651,24 +1715,24 @@ export default function RegisterBusinessPage() {
                     Selected Country: {countryConfig.flag} {countryConfig.name} ({countryConfig.phonePrefix})
                   </span>
                 </label>
-                <div className="relative flex items-center">
-                  <div className="absolute left-3 flex items-center gap-1.5 text-xs font-bold text-slate-600 select-none">
+                <div className={`flex items-center rounded-xl border bg-white overflow-hidden transition-all focus-within:ring-2 focus-within:ring-emerald-500/20 ${
+                  fieldErrors.phone ? "border-rose-400 bg-rose-50/20" : "border-slate-300 focus-within:border-emerald-500"
+                }`}>
+                  <div className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-50 border-r border-slate-200 text-xs font-bold text-slate-700 select-none shrink-0 pointer-events-none">
                     <span>{countryConfig.flag}</span>
-                    <span className="font-mono text-[11px]">{countryConfig.phonePrefix}</span>
-                    <span className="text-slate-300">|</span>
+                    <span className="font-mono text-xs text-slate-700">{countryConfig.phonePrefix}</span>
                   </div>
                   <input
                     type="tel"
                     required
+                    autoComplete="tel"
                     placeholder={countryConfig.code === "RW" ? "0788 123 456 or +250 788 123 456" : `${countryConfig.phonePrefix} 712 345 678`}
                     value={formData.phone}
                     onChange={(e) => {
                       setFormData({ ...formData, phone: e.target.value });
                       if (fieldErrors.phone) setFieldErrors({ ...fieldErrors, phone: "" });
                     }}
-                    className={`w-full pl-22 pr-4 py-2.5 rounded-xl border text-sm font-medium outline-none transition-colors ${
-                      fieldErrors.phone ? "border-rose-400 bg-rose-50/30" : "border-slate-300 focus:border-emerald-500"
-                    }`}
+                    className="w-full flex-1 px-3.5 py-2.5 bg-transparent text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none"
                   />
                 </div>
                 {fieldErrors.phone ? (
@@ -1703,20 +1767,24 @@ export default function RegisterBusinessPage() {
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     Dedicated WhatsApp Number <span className="text-rose-600">*</span>
                   </label>
-                  <div className="relative">
-                    <MessageCircle className="w-4 h-4 text-emerald-600 absolute left-3.5 top-3" />
+                  <div className={`flex items-center rounded-xl border bg-white overflow-hidden transition-all focus-within:ring-2 focus-within:ring-emerald-500/20 ${
+                    fieldErrors.whatsapp ? "border-rose-400 bg-rose-50/20" : "border-slate-300 focus-within:border-emerald-500"
+                  }`}>
+                    <div className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-50 border-r border-slate-200 text-xs font-bold text-slate-700 select-none shrink-0 pointer-events-none">
+                      <MessageCircle className="w-4 h-4 text-emerald-600" />
+                      <span className="font-mono text-xs text-slate-700">{countryConfig.phonePrefix}</span>
+                    </div>
                     <input
                       type="tel"
                       required
-                      placeholder="e.g. 0788 123 456 or +254 712 345 678"
+                      autoComplete="tel"
+                      placeholder={countryConfig.code === "RW" ? "0788 123 456 or +250 788 123 456" : `${countryConfig.phonePrefix} 712 345 678`}
                       value={formData.whatsapp}
                       onChange={(e) => {
                         setFormData({ ...formData, whatsapp: e.target.value });
                         if (fieldErrors.whatsapp) setFieldErrors({ ...fieldErrors, whatsapp: "" });
                       }}
-                      className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm font-medium outline-none transition-colors ${
-                        fieldErrors.whatsapp ? "border-rose-400 bg-rose-50/30" : "border-slate-300 focus:border-emerald-500"
-                      }`}
+                      className="w-full flex-1 px-3.5 py-2.5 bg-transparent text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none"
                     />
                   </div>
                   {fieldErrors.whatsapp && (
@@ -1733,9 +1801,10 @@ export default function RegisterBusinessPage() {
                   Owner Email Address <span className="text-slate-400 font-normal">(Optional — Recommended for official receipts)</span>
                 </label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
                   <input
                     type="email"
+                    autoComplete="email"
                     placeholder="e.g., owner@yourbusiness.com"
                     value={formData.email}
                     onChange={(e) => {
@@ -1743,7 +1812,7 @@ export default function RegisterBusinessPage() {
                       if (fieldErrors.email) setFieldErrors({ ...fieldErrors, email: "" });
                     }}
                     className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm font-medium outline-none transition-colors ${
-                      fieldErrors.email ? "border-rose-400 bg-rose-50/30" : "border-slate-300 focus:border-emerald-500"
+                      fieldErrors.email ? "border-rose-400 bg-rose-50/30" : "border-slate-300 focus:border-emerald-500 focus:bg-white"
                     }`}
                   />
                 </div>
@@ -1760,20 +1829,30 @@ export default function RegisterBusinessPage() {
                   Partner Portal Password (min 6 chars) <span className="text-rose-600">*</span>
                 </label>
                 <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     required
+                    autoComplete="new-password"
                     placeholder="Choose a secure password for logging into your Partner Portal"
                     value={formData.password}
                     onChange={(e) => {
                       setFormData({ ...formData, password: e.target.value });
                       if (fieldErrors.password) setFieldErrors({ ...fieldErrors, password: "" });
                     }}
-                    className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm font-medium outline-none transition-colors ${
-                      fieldErrors.password ? "border-rose-400 bg-rose-50/30" : "border-slate-300 focus:border-emerald-500"
+                    className={`w-full pl-10 pr-10 py-2.5 rounded-xl border text-sm font-medium outline-none transition-colors ${
+                      fieldErrors.password ? "border-rose-400 bg-rose-50/30" : "border-slate-300 focus:border-emerald-500 focus:bg-white"
                     }`}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    tabIndex={-1}
+                    className="absolute right-3 top-2.5 p-1 text-slate-400 hover:text-slate-600 transition-colors focus:outline-none cursor-pointer"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
                 {fieldErrors.password ? (
                   <span className="text-xs text-rose-600 font-semibold mt-1 block">
@@ -1788,7 +1867,7 @@ export default function RegisterBusinessPage() {
             </div>
 
             {/* Step 3 Actions */}
-            <div className="pt-4 flex items-center justify-between border-t border-slate-100">
+            <div className="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => {
@@ -1796,27 +1875,47 @@ export default function RegisterBusinessPage() {
                   setStep(2);
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
-                className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer"
+                className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span>Back to Location</span>
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (validateStep3()) {
-                    setErrorMsg(null);
-                    setStep(4);
-                    window.scrollTo({ top: 0, behavior: "smooth" });
-                  } else {
-                    window.scrollTo({ top: 200, behavior: "smooth" });
-                  }
-                }}
-                className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition-all flex items-center gap-2 cursor-pointer"
-              >
-                <span>Continue to Business Presentation</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (validateStep3()) {
+                      setErrorMsg(null);
+                      setStep(4);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    } else {
+                      window.scrollTo({ top: 200, behavior: "smooth" });
+                    }
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <span>Add Logo & Showcase (Optional)</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (validateStep3()) {
+                      setErrorMsg(null);
+                      setStep(5);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    } else {
+                      window.scrollTo({ top: 200, behavior: "smooth" });
+                    }
+                  }}
+                  className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>Review & Submit (Fast Registration)</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1837,6 +1936,27 @@ export default function RegisterBusinessPage() {
               <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
                 {operatingModel.model === "SERVICES" ? "Services-Based" : operatingModel.model === "FOOD_DINING" ? "Food & Dining" : "Product Retail"}
               </span>
+            </div>
+
+            {/* Optional Step Notice */}
+            <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 text-emerald-900">
+                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  <strong>Optional Showcase:</strong> You can skip this step now and add photos or catalog items anytime from your Partner Portal.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setErrorMsg(null);
+                  setStep(5);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold text-xs shrink-0 cursor-pointer transition shadow-2xs"
+              >
+                Skip to Review &rarr;
+              </button>
             </div>
 
             {/* Logo & Cover Media Uploads */}
@@ -2082,7 +2202,7 @@ export default function RegisterBusinessPage() {
                       className="w-3.5 h-3.5 accent-emerald-600 rounded cursor-pointer"
                     />
                     <span className="text-xs font-bold text-slate-700">
-                      Contact for price (No fixed price)
+                      Call for Price (Quotation upon customer inquiry)
                     </span>
                   </label>
                 </div>
@@ -2295,7 +2415,7 @@ export default function RegisterBusinessPage() {
                           <div>
                             <div className="font-bold text-slate-900">{p.name}</div>
                             <div className="text-[10px] text-slate-500">
-                              {p.contactForPrice ? "Contact for price" : `${Number(p.price).toLocaleString()} ${p.currency || defaultCurrency}`}
+                              {p.contactForPrice ? "Call for Price" : `${p.priceType === "ESTIMATED" ? "Estimated Price: ~" : ""}${Number(p.price).toLocaleString()} ${p.currency || defaultCurrency}`}
                               {p.mediaCaption && ` • "${p.mediaCaption}"`}
                             </div>
                           </div>
@@ -2324,7 +2444,7 @@ export default function RegisterBusinessPage() {
             </div>
 
             {/* Step 4 Actions */}
-            <div className="pt-4 flex items-center justify-between border-t border-slate-100">
+            <div className="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => {
@@ -2332,25 +2452,40 @@ export default function RegisterBusinessPage() {
                   setStep(3);
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
-                className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer"
+                className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span>Back to Contact</span>
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (validateStep4()) {
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
                     setErrorMsg(null);
                     setStep(5);
                     window.scrollTo({ top: 0, behavior: "smooth" });
-                  }
-                }}
-                className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition-all flex items-center gap-2 cursor-pointer"
-              >
-                <span>Continue to Review & Submit</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <span>Skip & Complete Later in Portal</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (validateStep4()) {
+                      setErrorMsg(null);
+                      setStep(5);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }
+                  }}
+                  className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>Continue to Review & Submit</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -2465,8 +2600,8 @@ export default function RegisterBusinessPage() {
                   </div>
                   <div className="space-y-1 text-xs text-slate-700">
                     <div><strong className="text-slate-900">Proprietor:</strong> {formData.ownerName}</div>
-                    <div><strong className="text-slate-900">Primary Phone:</strong> <span className="font-mono">{formData.phone}</span></div>
-                    <div><strong className="text-slate-900">WhatsApp:</strong> <span className="font-mono">{formData.hasDifferentWhatsapp ? formData.whatsapp : formData.phone}</span></div>
+                    <div><strong className="text-slate-900">Primary Phone:</strong> <span className="font-mono font-bold text-slate-900">{formatPhoneWithCountry(formData.phone, countryConfig.phonePrefix)}</span></div>
+                    <div><strong className="text-slate-900">WhatsApp:</strong> <span className="font-mono font-bold text-slate-900">{formatPhoneWithCountry(formData.hasDifferentWhatsapp ? formData.whatsapp : formData.phone, countryConfig.phonePrefix)}</span></div>
                     {formData.email && <div><strong className="text-slate-900">Email:</strong> {formData.email}</div>}
                     <div className="text-[11px] text-emerald-700 font-bold pt-1">
                       ✓ Partner Portal Password configured
@@ -2664,7 +2799,7 @@ export default function RegisterBusinessPage() {
                 <UrubutoStyleCheckout
                   businessId={registeredBusinessId || ""}
                   businessName={registeredBusinessName || formData.name}
-                  defaultPhone={formData.phone}
+                  defaultPhone={formatPhoneWithCountry(formData.phone, countryConfig.phonePrefix)}
                   feeConfig={paymentConfig?.fee}
                   providers={paymentConfig?.providers}
                   checkoutType="REGISTRATION"

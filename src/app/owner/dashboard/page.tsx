@@ -4870,7 +4870,7 @@ export default function OwnerDashboardPage() {
                         )}
                         {item.isEstimated && item.price > 0 && (
                           <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                            ~ Estimated
+                            Estimated Price
                           </span>
                         )}
                       </div>
@@ -4899,7 +4899,7 @@ export default function OwnerDashboardPage() {
                     <div className="text-right">
                       {item.price === 0 ? (
                         <div className="text-sm font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
-                          {lang === "rw" ? "Baza Igiciro" : "Contact for price"}
+                          {lang === "rw" ? "Baza Igiciro" : "Call for Price"}
                         </div>
                       ) : (
                         <div className="text-base sm:text-lg font-black text-slate-900">
@@ -6430,7 +6430,7 @@ export default function OwnerDashboardPage() {
                       }
                       className="w-3.5 h-3.5 accent-emerald-600 rounded cursor-pointer"
                     />
-                    <span>{lang === "rw" ? "Baza igiciro" : "Contact for price"}</span>
+                    <span>{lang === "rw" ? "Baza igiciro" : "Call for Price"}</span>
                   </label>
                 </div>
 
@@ -6489,7 +6489,7 @@ export default function OwnerDashboardPage() {
                   </>
                 ) : (
                   <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-800 text-xs font-semibold">
-                    ✓ {lang === "rw" ? "Baza igiciro byemejwe: Abakiriya bazajya babaza igiciro kuri WhatsApp." : "Contact for price enabled: Clients will inquire for custom quote on WhatsApp."}
+                    ✓ {lang === "rw" ? "Baza igiciro byemejwe: Abakiriya bazajya babaza igiciro kuri WhatsApp." : "Call for Price enabled: Clients will inquire for custom quote on WhatsApp."}
                   </div>
                 )}
               </div>
@@ -6729,7 +6729,7 @@ export default function OwnerDashboardPage() {
                       }
                       className="w-3.5 h-3.5 accent-emerald-600 rounded cursor-pointer"
                     />
-                    <span>{lang === "rw" ? "Baza igiciro" : "Contact for price"}</span>
+                    <span>{lang === "rw" ? "Baza igiciro" : "Call for Price"}</span>
                   </label>
                 </div>
 
@@ -6791,7 +6791,7 @@ export default function OwnerDashboardPage() {
                   </>
                 ) : (
                   <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-800 text-xs font-semibold">
-                    ✓ {lang === "rw" ? "Baza igiciro byemejwe: Abakiriya bazajya babaza igiciro kuri WhatsApp." : "Contact for price enabled: Clients will inquire for custom quote on WhatsApp."}
+                    ✓ {lang === "rw" ? "Baza igiciro byemejwe: Abakiriya bazajya babaza igiciro kuri WhatsApp." : "Call for Price enabled: Clients will inquire for custom quote on WhatsApp."}
                   </div>
                 )}
               </div>

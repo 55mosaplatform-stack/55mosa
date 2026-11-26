@@ -1351,7 +1351,7 @@ export default function AdminPanelPage() {
           </div>
           <div className="bg-slate-800 p-3 rounded-xl border border-slate-700">
             <div className="text-blue-400 font-medium">Products / Services</div>
-            <div className="text-xl font-bold text-blue-400">{metrics.totalProducts} ({metrics.estimatedProductsCount} Est.)</div>
+            <div className="text-xl font-bold text-blue-400">{metrics.totalProducts} ({metrics.estimatedProductsCount} Estimated Price)</div>
           </div>
         </div>
       </div>
@@ -2284,7 +2284,7 @@ export default function AdminPanelPage() {
                           <span>• Phone: <span className="font-mono text-slate-700">{biz.phone}</span></span>
                           {(biz as any).priceRangeMin && (biz as any).priceRangeMax && (
                             <span className="text-amber-700 font-semibold">
-                              (Est. {(biz as any).priceRangeMin.toLocaleString()} - {(biz as any).priceRangeMax.toLocaleString()} {(biz as any).currency || "RWF"})
+                              (Estimated Price: {(biz as any).priceRangeMin.toLocaleString()} - {(biz as any).priceRangeMax.toLocaleString()} {(biz as any).currency || "RWF"})
                             </span>
                           )}
                         </div>

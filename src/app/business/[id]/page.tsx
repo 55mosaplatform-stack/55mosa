@@ -760,10 +760,10 @@ export default function BusinessDetailPage({
             ) : (
               <div className="divide-y divide-slate-100">
                 {business.products.map((item) => {
-                  const isContactForPrice = item.price === 0 || (!item.price && !item.priceMin);
+                  const isContactForPrice = item.price === 0 || (!item.price && !item.priceMin) || Boolean((item as any).contactForPrice);
                   const itemCurrency = (item as any).currency || "Frw";
                   const priceLabel = isContactForPrice
-                    ? (lang === "rw" ? "Baza Igiciro" : "Contact for price")
+                    ? (lang === "rw" ? "Baza Igiciro" : "Call for Price")
                     : item.priceType === "RANGE" && item.priceMin && item.priceMax
                     ? `${item.priceMin.toLocaleString()} – ${item.priceMax.toLocaleString()} ${itemCurrency}`
                     : `${item.price.toLocaleString()} ${itemCurrency}`;
@@ -886,7 +886,9 @@ export default function BusinessDetailPage({
                             </div>
                           )}
                           <div className="flex items-center justify-end gap-1 text-[10px] text-slate-400">
-                            {item.isEstimated && !isContactForPrice && <span className="text-amber-600 font-semibold">(Est.)</span>}
+                            {item.isEstimated && !isContactForPrice && (
+                              <span className="text-amber-700 font-semibold">{lang === "rw" ? "(Igiciro kigereranyije)" : "(Estimated Price)"}</span>
+                            )}
                             {!isContactForPrice && item.unit && <span>/{item.unit}</span>}
                           </div>
                         </div>
@@ -911,7 +913,7 @@ export default function BusinessDetailPage({
                               <MessageCircle className="w-3.5 h-3.5" />
                               <span>
                                 {isContactForPrice
-                                  ? (lang === "rw" ? "Baza Igiciro" : "Inquire / Quote")
+                                  ? (lang === "rw" ? "Baza Igiciro" : "Call for Price")
                                   : item.isService || operatingModel.hasBookings
                                   ? (lang === "rw" ? "Fata Gahunda" : "Book via WhatsApp")
                                   : (lang === "rw" ? "Tumiza" : "Order via WhatsApp")}

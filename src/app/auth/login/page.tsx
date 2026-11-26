@@ -393,7 +393,7 @@ function LoginContent() {
                   required
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 rounded-xl border border-slate-300 text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
                 />
-                <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
               </div>
               <p className="text-[10px] text-slate-400 mt-1">
                 {lang === "rw" ? "Yakira telefone iyo ari yo yose (078..., +250..., +256..., +254..., +1...) cyangwa imeli" : "Accepts any phone (local or international +256..., +254..., +1...) or email"}
@@ -416,7 +416,7 @@ function LoginContent() {
                   required
                   className="w-full pl-10 pr-10 py-2.5 bg-slate-50 rounded-xl border border-slate-300 text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
                 />
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
@@ -632,7 +632,7 @@ function LoginContent() {
                   required
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 rounded-xl border border-slate-300 text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
                 />
-                <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
               </div>
             </div>
 
@@ -650,7 +650,7 @@ function LoginContent() {
                   required
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 rounded-xl border border-slate-300 text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
                 />
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
               </div>
             </div>
 

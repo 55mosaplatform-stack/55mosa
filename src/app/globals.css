@@ -81,6 +81,34 @@ select,
   user-select: text !important;
 }
 
+/* ========================================================
+   Form Input Normalization & Autofill Stability
+   ======================================================== */
+
+/* Remove iOS Safari inner top inset shadows & normalize appearance across browsers */
+input[type="text"],
+input[type="tel"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="search"] {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+
+/* Eliminate WebKit autofill yellow/blue inset box-shadow and text discoloration */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px white inset !important;
+  -webkit-text-fill-color: #0f172a !important;
+  box-shadow: 0 0 0 1000px white inset !important;
+  caret-color: #0f172a !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
 /* Visual cursor affordance for inspectable images */
 .cursor-zoom-view {
   cursor: zoom-in;

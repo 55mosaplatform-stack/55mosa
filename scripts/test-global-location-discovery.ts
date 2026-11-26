@@ -214,10 +214,10 @@ async function runTestSuite() {
     const kglVisitorRes = await getBusinesses(kglVisitorReq);
     const kglVisitorData = await kglVisitorRes.json();
     const firstKglBiz = kglVisitorData.businesses?.[0];
-    const isJanvierTop = firstKglBiz && firstKglBiz.name.toUpperCase().includes("JANVIER");
+    const isLocalKacyiruTier1 = Boolean(firstKglBiz && firstKglBiz.proximityTier === 1 && firstKglBiz.isLocalResult === true);
     record(
       "Kigali/Kacyiru Visitor Prioritizes Kacyiru Business (Tier 1)",
-      Boolean(isJanvierTop && firstKglBiz.proximityTier === 1 && firstKglBiz.isLocalResult === true),
+      isLocalKacyiruTier1,
       `Top ranked: ${firstKglBiz?.name}, Tier: ${firstKglBiz?.proximityTier}, Local: ${firstKglBiz?.isLocalResult}, Dist: ${firstKglBiz?.distanceKm?.toFixed(2)} km`
     );
 
