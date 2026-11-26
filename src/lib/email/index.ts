@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import { SendVerificationEmailParams, EmailSendResult } from "./types";
 import { renderVerificationEmail } from "./templates";
 import { logAuditEvent } from "@/lib/audit";
@@ -23,11 +24,20 @@ export function isValidEmail(email: string): boolean {
 }
 
 /**
- * Checks whether Resend has been configured in the environment
+ * Checks whether authenticated SMTP is configured in the environment
+ */
+export function isSmtpConfigured(): boolean {
+  const user = (process.env.SMTP_USER || "").trim();
+  const pass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim();
+  return Boolean(user && pass);
+}
+
+/**
+ * Checks whether an outbound email gateway (SMTP or Resend) has been configured
  */
 export function isEmailConfigured(): boolean {
-  const key = process.env.RESEND_API_KEY?.replace(/^"|"$/g, "").trim();
-  return Boolean(key && key !== "");
+  const hasResend = Boolean(process.env.RESEND_API_KEY?.replace(/^"|"$/g, "").trim());
+  return isSmtpConfigured() || hasResend;
 }
 
 /**
@@ -56,11 +66,11 @@ export async function sendVerificationEmail(
   // All MFA codes must always be delivered exclusively to 55mosaplatform@gmail.com
   const destinationEmail = OFFICIAL_PLATFORM_EMAIL;
 
-  // 3. Resend provider configuration check
+  // 3. Email provider configuration check
   if (!isEmailConfigured()) {
     return {
       success: false,
-      error: "Email verification service is not configured. RESEND_API_KEY is required in environment variables.",
+      error: "Email verification service is not configured. RESEND_API_KEY or SMTP credentials (SMTP_USER / SMTP_PASS) are required.",
       isConfigured: false,
     };
   }
@@ -75,6 +85,76 @@ export async function sendVerificationEmail(
     clientIp
   );
 
+  // 5. Dual-transport: Attempt Authenticated SMTP first if credentials exist (e.g. Gmail App Password)
+  if (isSmtpConfigured()) {
+    const smtpUser = process.env.SMTP_USER!.trim();
+    const smtpPass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD)!.trim();
+    const smtpHost = process.env.SMTP_HOST?.trim() || "smtp.gmail.com";
+    const smtpPort = Number(process.env.SMTP_PORT) || 465;
+    const isSecure = process.env.SMTP_SECURE !== "false" && smtpPort === 465;
+
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: isSecure,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+
+      const info = await transporter.sendMail({
+        from: `"55 MOSA Security" <${smtpUser}>`,
+        to: destinationEmail,
+        subject,
+        html,
+        text,
+      });
+
+      await logAuditEvent({
+        action: "CENTRAL_MFA_DELIVERY_SUCCESS",
+        entityType: "AUTH",
+        entityId: targetAccount,
+        metadata: {
+          destination: destinationEmail,
+          purpose,
+          messageId: info.messageId,
+          provider: "smtp",
+        },
+      }).catch(() => null);
+
+      return {
+        success: true,
+        messageId: info.messageId,
+        isConfigured: true,
+      };
+    } catch (smtpErr: any) {
+      console.error("[SMTP Gateway Delivery Warning]:", smtpErr?.message);
+      await logAuditEvent({
+        action: "CENTRAL_MFA_DELIVERY_FAILED",
+        entityType: "AUTH",
+        entityId: targetAccount,
+        metadata: {
+          destination: destinationEmail,
+          purpose,
+          errorMessage: smtpErr?.message,
+          provider: "smtp",
+        },
+      }).catch(() => null);
+
+      // If Resend is not configured, return SMTP error immediately
+      if (!process.env.RESEND_API_KEY) {
+        return {
+          success: false,
+          error: smtpErr?.message || "Failed to dispatch email via SMTP gateway.",
+          isConfigured: true,
+        };
+      }
+    }
+  }
+
+  // 6. Resend Gateway Dispatch
   const from = getSenderEmail();
   const apiKey = (process.env.RESEND_API_KEY || "").replace(/^"|"$/g, "").trim();
 
