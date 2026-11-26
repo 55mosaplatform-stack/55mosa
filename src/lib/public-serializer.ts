@@ -149,9 +149,10 @@ export function serializePublicBusiness(raw: any): PublicBusiness {
 
   const approvedPhotos: string[] = rawMediaList.length > 0
     ? rawMediaList
-        .filter((m: any) => m.mediaType !== "VIDEO" && m.moderationStatus !== "REMOVED")
+        .filter((m: any) => m.mediaType !== "VIDEO" && m.moderationStatus !== "REMOVED" && m.url && m.url !== formatted.coverImage)
         .map((m: any) => m.url)
-    : (formatted.photos || []);
+        .slice(0, 3)
+    : [];
 
   const safeProducts: PublicProduct[] = Array.isArray(formatted.products)
     ? formatted.products
@@ -167,7 +168,9 @@ export function serializePublicBusiness(raw: any): PublicBusiness {
           priceType: p.priceType,
           isEstimated: p.isEstimated,
           isService: Boolean((p as any).isService),
-          mediaUrl: (p as any).mediaUrl || null,
+          mediaUrl: (p as any).mediaUrl && (p as any).mediaUrl.startsWith("data:image/") && (p as any).mediaUrl.length > 8192
+            ? null
+            : ((p as any).mediaUrl || null),
           mediaType: (p as any).mediaType || "IMAGE",
           mediaCaption: (p as any).mediaCaption || null,
           currency: p.currency || "RWF",
@@ -259,7 +262,7 @@ export function serializePublicBusiness(raw: any): PublicBusiness {
     openingHours: formatted.openingHours,
     isOpenNow: formatted.isOpenNow,
     coverImage: formatted.coverImage,
-    photos: approvedPhotos.length > 0 ? approvedPhotos : formatted.photos,
+    photos: approvedPhotos.filter((p) => p && p !== formatted.coverImage),
     videos: safeVideos,
     products: safeProducts,
     featuredOffer: formatted.featuredOffer,

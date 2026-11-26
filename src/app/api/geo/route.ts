@@ -50,6 +50,14 @@ function buildFallbackTree() {
   return { counts, provinces };
 }
 
+// In-memory cache for geographic tree hierarchy (1 hour TTL)
+interface CachedGeoTree {
+  data: any;
+  timestamp: number;
+}
+let geoTreeCache: CachedGeoTree | null = null;
+const GEO_CACHE_TTL_MS = 60 * 60 * 1000;
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const level = searchParams.get("level") || "tree"; // "tree" | "sectors" | "cells"
@@ -168,19 +176,51 @@ export async function GET(request: Request) {
     }
 
     // Default: full tree of provinces -> districts -> sectors -> cells -> local areas
+    if (geoTreeCache && (Date.now() - geoTreeCache.timestamp < GEO_CACHE_TTL_MS)) {
+      return NextResponse.json(geoTreeCache.data, {
+        headers: {
+          "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
+          "X-MOSA-Cache": "HIT",
+        },
+      });
+    }
+
     const provinces = await prisma.geographicProvince.findMany({
-      include: {
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        nameRw: true,
         districts: {
-          include: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            nameRw: true,
             sectors: {
-              include: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                nameRw: true,
                 cells: {
-                  include: {
-                    localAreas: true,
-                    _count: { select: { businesses: true } },
+                  select: {
+                    id: true,
+                    name: true,
+                    nameRw: true,
+                    localAreas: {
+                      select: {
+                        id: true,
+                        name: true,
+                        nameRw: true,
+                        latitude: true,
+                        longitude: true,
+                        type: true,
+                        landmark: true,
+                      },
+                    },
                   },
                 },
-                _count: { select: { businesses: true, agents: true } },
               },
             },
           },
@@ -189,7 +229,7 @@ export async function GET(request: Request) {
       orderBy: { name: "asc" },
     });
 
-    let finalProvinces = provinces;
+    let finalProvinces = provinces as any[];
     let counts = {
       provinces: provinces.length,
       districts: provinces.reduce((acc, p) => acc + p.districts.length, 0),
@@ -203,10 +243,22 @@ export async function GET(request: Request) {
       finalProvinces = fallback.provinces as any;
     }
 
-    return NextResponse.json({
+    const responsePayload = {
       success: true,
       counts,
       provinces: finalProvinces,
+    };
+
+    geoTreeCache = {
+      data: responsePayload,
+      timestamp: Date.now(),
+    };
+
+    return NextResponse.json(responsePayload, {
+      headers: {
+        "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
+        "X-MOSA-Cache": "MISS",
+      },
     });
   } catch (error) {
     console.error("[Geo API] Error loading geographic hierarchy, using resilient fallback:", error);
@@ -216,6 +268,10 @@ export async function GET(request: Request) {
       counts: fallback.counts,
       provinces: fallback.provinces,
       isFallback: true,
+    }, {
+      headers: {
+        "Cache-Control": "public, s-maxage=300",
+      },
     });
   }
 }

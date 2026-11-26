@@ -7,6 +7,7 @@ import { useLanguage } from "@/lib/i18n";
 import { processDeviceUpload, isVideoMedia } from "@/lib/media-upload";
 import { SmartLocationForm, SmartLocationFormData } from "@/components/location/SmartLocationForm";
 import { getCountryConfig } from "@/lib/country-address-config";
+import { InternationalPhoneInput } from "@/components/common/InternationalPhoneInput";
 import { 
   Store, 
   MapPin, 
@@ -1705,45 +1706,24 @@ export default function RegisterBusinessPage() {
                 )}
               </div>
 
-              {/* Primary Phone Number (Required with Country Prefix) */}
+              {/* Primary Phone Number with Polished Country Selector */}
               <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
-                  <span>
-                    Primary Business Phone Number <span className="text-rose-600">*</span>
-                  </span>
-                  <span className="text-[11px] font-bold text-slate-500">
-                    Selected Country: {countryConfig.flag} {countryConfig.name} ({countryConfig.phonePrefix})
-                  </span>
-                </label>
-                <div className={`flex items-center rounded-xl border bg-white overflow-hidden transition-all focus-within:ring-2 focus-within:ring-emerald-500/20 ${
-                  fieldErrors.phone ? "border-rose-400 bg-rose-50/20" : "border-slate-300 focus-within:border-emerald-500"
-                }`}>
-                  <div className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-50 border-r border-slate-200 text-xs font-bold text-slate-700 select-none shrink-0 pointer-events-none">
-                    <span>{countryConfig.flag}</span>
-                    <span className="font-mono text-xs text-slate-700">{countryConfig.phonePrefix}</span>
-                  </div>
-                  <input
-                    type="tel"
-                    required
-                    autoComplete="tel"
-                    placeholder={countryConfig.code === "RW" ? "0788 123 456 or +250 788 123 456" : `${countryConfig.phonePrefix} 712 345 678`}
-                    value={formData.phone}
-                    onChange={(e) => {
-                      setFormData({ ...formData, phone: e.target.value });
-                      if (fieldErrors.phone) setFieldErrors({ ...fieldErrors, phone: "" });
-                    }}
-                    className="w-full flex-1 px-3.5 py-2.5 bg-transparent text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none"
-                  />
-                </div>
-                {fieldErrors.phone ? (
-                  <span className="text-xs text-rose-600 font-semibold mt-1 block">
-                    {fieldErrors.phone}
-                  </span>
-                ) : (
-                  <span className="text-[11px] text-slate-500 mt-1 block">
-                    Customers will call this number directly for inquiries and purchases.
-                  </span>
-                )}
+                <InternationalPhoneInput
+                  id="primary-business-phone"
+                  label="Primary Business Phone Number"
+                  required
+                  country={locationData.country || "Rwanda"}
+                  onCountryChange={(newCountry) => {
+                    setLocationData((prev) => ({ ...prev, country: newCountry }));
+                  }}
+                  value={formData.phone}
+                  onChange={(val) => {
+                    setFormData({ ...formData, phone: val });
+                    if (fieldErrors.phone) setFieldErrors({ ...fieldErrors, phone: "" });
+                  }}
+                  error={fieldErrors.phone}
+                  helperText="Customers will call this number directly for inquiries and purchases."
+                />
               </div>
 
               {/* Conditional WhatsApp Toggle */}
@@ -1764,34 +1744,19 @@ export default function RegisterBusinessPage() {
               {/* Conditional WhatsApp Input */}
               {formData.hasDifferentWhatsapp && (
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Dedicated WhatsApp Number <span className="text-rose-600">*</span>
-                  </label>
-                  <div className={`flex items-center rounded-xl border bg-white overflow-hidden transition-all focus-within:ring-2 focus-within:ring-emerald-500/20 ${
-                    fieldErrors.whatsapp ? "border-rose-400 bg-rose-50/20" : "border-slate-300 focus-within:border-emerald-500"
-                  }`}>
-                    <div className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-50 border-r border-slate-200 text-xs font-bold text-slate-700 select-none shrink-0 pointer-events-none">
-                      <MessageCircle className="w-4 h-4 text-emerald-600" />
-                      <span className="font-mono text-xs text-slate-700">{countryConfig.phonePrefix}</span>
-                    </div>
-                    <input
-                      type="tel"
-                      required
-                      autoComplete="tel"
-                      placeholder={countryConfig.code === "RW" ? "0788 123 456 or +250 788 123 456" : `${countryConfig.phonePrefix} 712 345 678`}
-                      value={formData.whatsapp}
-                      onChange={(e) => {
-                        setFormData({ ...formData, whatsapp: e.target.value });
-                        if (fieldErrors.whatsapp) setFieldErrors({ ...fieldErrors, whatsapp: "" });
-                      }}
-                      className="w-full flex-1 px-3.5 py-2.5 bg-transparent text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none"
-                    />
-                  </div>
-                  {fieldErrors.whatsapp && (
-                    <span className="text-xs text-rose-600 font-semibold mt-1 block">
-                      {fieldErrors.whatsapp}
-                    </span>
-                  )}
+                  <InternationalPhoneInput
+                    id="dedicated-whatsapp-number"
+                    label="Dedicated WhatsApp Number"
+                    required
+                    country={locationData.country || "Rwanda"}
+                    value={formData.whatsapp}
+                    onChange={(val) => {
+                      setFormData({ ...formData, whatsapp: val });
+                      if (fieldErrors.whatsapp) setFieldErrors({ ...fieldErrors, whatsapp: "" });
+                    }}
+                    error={fieldErrors.whatsapp}
+                    helperText="Direct WhatsApp order link generated for catalog items."
+                  />
                 </div>
               )}
 

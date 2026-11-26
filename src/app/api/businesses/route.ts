@@ -101,6 +101,10 @@ export async function GET(request: Request) {
   const userCountry = searchParams.get("userCountry") || searchParams.get("country") || undefined;
   const userCity = searchParams.get("userCity") || searchParams.get("city") || undefined;
   const strictLocation = searchParams.get("strictLocation") === "true";
+  const limitParam = searchParams.get("limit");
+  const pageParam = searchParams.get("page");
+  const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10), 1), 100) : 24;
+  const page = pageParam ? Math.max(parseInt(pageParam, 10), 1) : 1;
 
   try {
     // Proximity duplicate detection check using Haversine algorithm
@@ -376,23 +380,34 @@ export async function GET(request: Request) {
         .catch(() => {});
     }
 
+    const businessInclude = {
+      products: {
+        where: { isArchived: false, moderationStatus: { not: "REMOVED" as const } },
+        take: 3,
+      },
+      reviews: {
+        select: { id: true, rating: true, verifiedVisit: true },
+      },
+      businessHours: true,
+      localArea: true,
+      media: {
+        where: { moderationStatus: { not: "REMOVED" as const } },
+        take: 2,
+      },
+      opportunities: {
+        where: {
+          status: "OPEN" as const,
+          moderationStatus: "APPROVED" as const,
+        },
+        take: 2,
+      },
+    };
+
     let businesses: any[] = [];
     try {
       businesses = await prisma.business.findMany({
         where,
-        include: {
-          products: true,
-          reviews: true,
-          businessHours: true,
-          localArea: true,
-          media: true,
-          opportunities: {
-            where: {
-              status: "OPEN",
-              moderationStatus: "APPROVED",
-            },
-          },
-        },
+        include: businessInclude,
         orderBy: { updatedAt: "desc" },
       });
     } catch (initialDbError) {
@@ -400,19 +415,7 @@ export async function GET(request: Request) {
       await new Promise((resolve) => setTimeout(resolve, 800));
       businesses = await prisma.business.findMany({
         where,
-        include: {
-          products: true,
-          reviews: true,
-          businessHours: true,
-          localArea: true,
-          media: true,
-          opportunities: {
-            where: {
-              status: "OPEN",
-              moderationStatus: "APPROVED",
-            },
-          },
-        },
+        include: businessInclude,
         orderBy: { updatedAt: "desc" },
       });
     }
@@ -616,12 +619,23 @@ export async function GET(request: Request) {
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
 
-    const formatted = businesses.map(serializePublicBusiness);
+    const totalMatching = businesses.length;
+    const startIndex = (page - 1) * limit;
+    const paginatedBusinesses = businesses.slice(startIndex, startIndex + limit);
+    const formatted = paginatedBusinesses.map(serializePublicBusiness);
+
+    const isDynamic = Boolean(search || targetLat || targetLng || checkDuplicate);
+    const cacheHeader = isDynamic
+      ? "private, no-cache, no-store, must-revalidate"
+      : "public, s-maxage=60, stale-while-revalidate=300";
 
     return NextResponse.json({
       success: true,
       source: "live",
       count: formatted.length,
+      total: totalMatching,
+      page,
+      limit,
       detectedLocality: {
         country: userCountry || "Worldwide",
         city: userCity || "Worldwide",
@@ -630,6 +644,11 @@ export async function GET(request: Request) {
       localCount: formatted.filter((b) => b.isLocalResult).length,
       nlpParsed: parsedNlp,
       businesses: formatted,
+    }, {
+      headers: {
+        "Cache-Control": cacheHeader,
+        "X-Total-Count": String(totalMatching),
+      },
     });
   } catch (error) {
     console.error("[Businesses API] PostgreSQL query error:", error);

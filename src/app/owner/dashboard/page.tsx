@@ -70,6 +70,7 @@ import { MosaMap } from "@/components/discovery/MosaMap";
 import { calculateLocationCompleteness, getGoogleMapsDirectionsUrl } from "@/lib/location-quality";
 import { FinanceTab } from "@/components/owner/FinanceTab";
 import { OperationsTab } from "@/components/owner/OperationsTab";
+import { InternationalPhoneInput } from "@/components/common/InternationalPhoneInput";
 import {
   CANONICAL_TAXONOMY,
   ALL_MAIN_CATEGORIES,
@@ -3503,30 +3504,32 @@ export default function OwnerDashboardPage() {
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-bold text-slate-700">Proprietor Phone Number</label>
-                <span className="text-[10px] font-bold text-emerald-600 uppercase bg-emerald-50 px-2 py-0.5 rounded">Public / SMS Alerts</span>
-              </div>
-              <input
-                type="tel"
-                value={profileForm.phone}
-                onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+              <InternationalPhoneInput
+                id="owner-profile-phone"
+                label="Proprietor Phone Number"
                 required
-                className="w-full p-3 bg-slate-50 rounded-xl border border-slate-300 text-xs font-mono font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+                country={profileForm.country || "Rwanda"}
+                onCountryChange={(newCountry) => {
+                  setProfileForm((prev) => ({ ...prev, country: newCountry }));
+                }}
+                value={profileForm.phone}
+                onChange={(val) => {
+                  setProfileForm((prev) => ({ ...prev, phone: val }));
+                }}
+                helperText="Public contact for customer calls and SMS order notifications."
               />
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-bold text-slate-700">WhatsApp Contact</label>
-                <span className="text-[10px] font-bold text-emerald-600 uppercase bg-emerald-50 px-2 py-0.5 rounded">Public</span>
-              </div>
-              <input
-                type="tel"
+              <InternationalPhoneInput
+                id="owner-profile-whatsapp"
+                label="WhatsApp Contact"
+                country={profileForm.country || "Rwanda"}
                 value={profileForm.whatsapp}
-                onChange={(e) => setProfileForm({ ...profileForm, whatsapp: e.target.value })}
-                placeholder="+250 788 000 000"
-                className="w-full p-3 bg-slate-50 rounded-xl border border-slate-300 text-xs font-mono outline-none focus:ring-2 focus:ring-emerald-500"
+                onChange={(val) => {
+                  setProfileForm((prev) => ({ ...prev, whatsapp: val }));
+                }}
+                helperText="Direct WhatsApp link for catalog purchases and quote inquiries."
               />
             </div>
 
