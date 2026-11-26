@@ -493,7 +493,7 @@ export default function RegisterBusinessPage() {
       setItemError(
         lang === "rw"
           ? "Injiza igiciro cyangwa uhitemo 'Baza Igiciro'."
-          : "Please enter a price or select 'Contact for price'."
+          : "Please enter a price or select 'Call for Price'."
       );
       return false;
     }
@@ -742,7 +742,7 @@ export default function RegisterBusinessPage() {
         setErrorMsg(
           lang === "rw"
             ? "Nyamuneka uzuza igiciro cyangwa uhitemo 'Baza Igiciro' ku kintu uri kwinjiza."
-            : "Please specify a price or select 'Contact for price' for the item being drafted."
+            : "Please specify a price or select 'Call for Price' for the item being drafted."
         );
         return false;
       }
