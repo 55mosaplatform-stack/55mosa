@@ -2,7 +2,7 @@ import { CANONICAL_TAXONOMY, suggestCategoryFromText } from "../src/lib/taxonomy
 import { getCountryConfig, getAllSupportedCountries } from "../src/lib/country-address-config";
 import { prisma } from "../src/lib/prisma";
 
-const PROD_URL = "https://www.55mosa.com";
+const PROD_URL = process.env.TARGET_URL || "https://www.55mosa.com";
 
 interface TestResult {
   suite: string;

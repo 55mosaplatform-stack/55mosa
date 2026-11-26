@@ -14,6 +14,14 @@ const SEARCH_STOPWORDS = new Set([
   "with", "near", "muri", "ku", "ya", "na", "mu", "hafi", "za", "wa", "rwanda", "kigali"
 ]);
 
+// High-speed in-memory cache for default discovery feed queries
+let defaultFeedCache: { data: any[]; timestamp: number } | null = null;
+const FEED_CACHE_TTL_MS = 30 * 1000; // 30 seconds TTL
+
+export function invalidateBusinessesFeedCache() {
+  defaultFeedCache = null;
+}
+
 function buildLocationOrConditions(locationTerm: string) {
   const clean = locationTerm.trim();
   const tokens: string[] = [clean];
@@ -404,20 +412,30 @@ export async function GET(request: Request) {
     };
 
     let businesses: any[] = [];
-    try {
-      businesses = await prisma.business.findMany({
-        where,
-        include: businessInclude,
-        orderBy: { updatedAt: "desc" },
-      });
-    } catch (initialDbError) {
-      console.warn("[Businesses API] Transient DB pooler delay, retrying query once...", initialDbError);
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      businesses = await prisma.business.findMany({
-        where,
-        include: businessInclude,
-        orderBy: { updatedAt: "desc" },
-      });
+    const isDefaultFeedQuery = !search && !category && !district && !sector && !cell && !targetLat && !targetLng && !checkDuplicate;
+
+    if (isDefaultFeedQuery && defaultFeedCache && (Date.now() - defaultFeedCache.timestamp < FEED_CACHE_TTL_MS)) {
+      businesses = defaultFeedCache.data;
+    } else {
+      try {
+        businesses = await prisma.business.findMany({
+          where,
+          include: businessInclude,
+          orderBy: { updatedAt: "desc" },
+        });
+      } catch (initialDbError) {
+        console.warn("[Businesses API] Transient DB pooler delay, retrying query once...", initialDbError);
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        businesses = await prisma.business.findMany({
+          where,
+          include: businessInclude,
+          orderBy: { updatedAt: "desc" },
+        });
+      }
+
+      if (isDefaultFeedQuery && businesses.length > 0) {
+        defaultFeedCache = { data: businesses, timestamp: Date.now() };
+      }
     }
 
     // -------------------------------------------------------------------------
@@ -820,6 +838,8 @@ export async function POST(request: Request) {
       entityId: business.id,
       metadata: { name: business.name, cell: business.cell, dataStatus: business.dataStatus },
     });
+
+    invalidateBusinessesFeedCache();
 
     const fullBusiness = await prisma.business.findUnique({
       where: { id: business.id },

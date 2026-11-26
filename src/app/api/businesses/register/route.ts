@@ -13,6 +13,7 @@ import {
   ALL_BUSINESS_TYPES 
 } from "@/lib/taxonomy";
 import { getCountryConfig } from "@/lib/country-address-config";
+import { invalidateBusinessesFeedCache } from "@/app/api/businesses/route";
 
 export async function POST(request: Request) {
   try {
@@ -453,6 +454,7 @@ export async function POST(request: Request) {
     // Revalidate Command Center queues so new submission appears immediately
     try {
       revalidatePath("/admin");
+      invalidateBusinessesFeedCache();
     } catch {
       // Non-blocking
     }
