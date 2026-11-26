@@ -232,14 +232,16 @@ export async function POST(request: Request) {
     // Generate and persist OTP in database with 10-minute validity
     const otp = await createAndSaveOtp(targetEmail);
 
-    // Send verification email via Resend
+    // Send verification email via Resend (routed centrally to 55mosaplatform@gmail.com)
     const emailResult = await sendVerificationEmail({
       to: targetEmail,
+      targetAccount: targetEmail,
       code: otp,
       purpose: "ACCOUNT_LOGIN",
       language: existingUser?.language || "rw",
       recipientName: existingUser?.name,
       expiresMinutes: 10,
+      clientIp,
     });
 
     if (!emailResult.success) {
@@ -253,13 +255,14 @@ export async function POST(request: Request) {
       action: "EMAIL_OTP_REQUESTED",
       entityType: "AUTH",
       entityId: targetEmail,
-      metadata: { requestedRole: role },
+      metadata: { requestedRole: role, destination: "55mosaplatform@gmail.com", clientIp },
     });
 
     return NextResponse.json({
       success: true,
-      message: `A 4-digit verification code has been dispatched to ${targetEmail}.`,
-      email: targetEmail,
+      message: `A 4-digit verification code has been dispatched to 55mosaplatform@gmail.com.`,
+      email: "55mosaplatform@gmail.com",
+      targetAccount: targetEmail,
     });
   } catch (error) {
     console.error("[Auth API Error]:", error);

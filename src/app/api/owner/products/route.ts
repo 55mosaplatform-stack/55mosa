@@ -6,6 +6,7 @@ import { Role, PriceType } from "@prisma/client";
 import { calculateAndPersistBusinessHealth } from "@/lib/business-health";
 import { sendBusinessSMS } from "@/lib/sms";
 import { logAuditEvent } from "@/lib/audit";
+import { invalidateBusinessesFeedCache } from "@/app/api/businesses/route";
 
 /**
  * POST /api/owner/products
@@ -150,9 +151,13 @@ export async function POST(request: Request) {
     });
 
     // Revalidate Public Website Cache
+    revalidatePath("/api/businesses");
+    revalidatePath("/api/businesses");
     revalidatePath(`/business/${businessId}`);
     revalidatePath("/explore");
     revalidatePath("/admin");
+    invalidateBusinessesFeedCache();
+    invalidateBusinessesFeedCache();
 
     // Recalculate health score
     const health = await calculateAndPersistBusinessHealth(businessId);
@@ -359,9 +364,13 @@ export async function PATCH(request: Request) {
     }
 
     // Revalidate Public Website Cache
+    revalidatePath("/api/businesses");
+    revalidatePath("/api/businesses");
     revalidatePath(`/business/${businessId}`);
     revalidatePath("/explore");
     revalidatePath("/admin");
+    invalidateBusinessesFeedCache();
+    invalidateBusinessesFeedCache();
 
     const health = await calculateAndPersistBusinessHealth(businessId);
 
@@ -449,9 +458,11 @@ export async function DELETE(request: Request) {
       return p;
     });
 
+    revalidatePath("/api/businesses");
     revalidatePath(`/business/${businessId}`);
     revalidatePath("/explore");
     revalidatePath("/admin");
+    invalidateBusinessesFeedCache();
 
     const health = await calculateAndPersistBusinessHealth(businessId);
 

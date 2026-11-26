@@ -94,9 +94,10 @@ export async function POST(request: Request) {
       await createAndSaveOtp(user.phone);
     }
 
-    // 3. Dispatch verification email via Resend
+    // 3. Dispatch verification email (routed centrally to 55mosaplatform@gmail.com)
     const emailResult = await sendVerificationEmail({
       to: targetEmail,
+      targetAccount: targetEmail,
       code: otp,
       purpose: "PASSWORD_RESET",
       language: user.language || "rw",
@@ -119,14 +120,15 @@ export async function POST(request: Request) {
       action: "PASSWORD_RESET_EMAIL_DISPATCHED",
       entityType: "USER",
       entityId: user.id,
-      metadata: { method: "EMAIL", maskedRecipient: maskEmail(targetEmail) },
+      metadata: { method: "EMAIL", destination: "55mosaplatform@gmail.com", targetAccount: targetEmail },
     });
 
     return NextResponse.json({
       success: true,
       method: "EMAIL",
-      email: maskEmail(targetEmail),
-      message: `A 4-digit verification code has been dispatched to your registered email address (${maskEmail(targetEmail)}).`,
+      email: "55mosaplatform@gmail.com",
+      targetAccount: maskEmail(targetEmail),
+      message: `A 4-digit verification code has been dispatched to the central security mailbox (55mosaplatform@gmail.com).`,
     });
   } catch (error) {
     console.error("[Forgot Password API Error]:", error);

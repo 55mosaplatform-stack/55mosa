@@ -10,6 +10,7 @@ import { syncAndGetBusinessReminders } from "@/lib/reminders-engine";
 import { sendBusinessSMS } from "@/lib/sms";
 import { logAuditEvent } from "@/lib/audit";
 import { validateCategoryHierarchy } from "@/lib/taxonomy";
+import { invalidateBusinessesFeedCache } from "@/app/api/businesses/route";
 
 /**
  * GET /api/owner/business
@@ -531,12 +532,14 @@ export async function PATCH(request: Request) {
     }
 
     // Instant Public Page Cache Revalidation
+    revalidatePath("/api/businesses");
     revalidatePath(`/business/${businessId}`);
     revalidatePath("/explore");
     revalidatePath("/search");
     revalidatePath("/");
     revalidatePath("/admin");
     revalidatePath("/owner/dashboard");
+    invalidateBusinessesFeedCache();
 
     // Recalculate health and confirmation
     const [updatedBusiness, updatedHealth] = await Promise.all([

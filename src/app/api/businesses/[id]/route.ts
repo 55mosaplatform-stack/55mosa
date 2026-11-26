@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, requireAuth } from "@/lib/auth";
 import { logAuditEvent } from "@/lib/audit";
@@ -6,6 +7,7 @@ import { VerificationStatus, Role } from "@prisma/client";
 import { formatBusinessRecord } from "@/lib/format-business";
 import { serializePublicBusiness } from "@/lib/public-serializer";
 import { permanentlyDeleteBusiness } from "@/lib/business-deletion";
+import { invalidateBusinessesFeedCache } from "@/app/api/businesses/route";
 
 export async function GET(
   request: Request,
@@ -135,6 +137,17 @@ export async function PATCH(
         return b;
       });
 
+      try {
+        revalidatePath("/api/businesses");
+        revalidatePath(`/api/businesses/${id}`);
+        revalidatePath(`/business/${id}`);
+        revalidatePath("/explore");
+        revalidatePath("/");
+        invalidateBusinessesFeedCache();
+      } catch {
+        // Non-blocking
+      }
+
       return NextResponse.json({ success: true, business: formatBusinessRecord(updated) });
     }
 
@@ -227,6 +240,17 @@ export async function PATCH(
         return b;
       });
 
+      try {
+        revalidatePath("/api/businesses");
+        revalidatePath(`/api/businesses/${id}`);
+        revalidatePath(`/business/${id}`);
+        revalidatePath("/explore");
+        revalidatePath("/");
+        invalidateBusinessesFeedCache();
+      } catch {
+        // Non-blocking
+      }
+
       return NextResponse.json({ success: true, business: formatBusinessRecord(updated) });
     }
 
@@ -252,6 +276,17 @@ export async function DELETE(
   const result = await permanentlyDeleteBusiness(id, auth.user);
   if (!result.success) {
     return NextResponse.json({ error: result.error }, { status: result.status });
+  }
+
+  try {
+    revalidatePath("/api/businesses");
+    revalidatePath(`/api/businesses/${id}`);
+    revalidatePath(`/business/${id}`);
+    revalidatePath("/explore");
+    revalidatePath("/");
+    invalidateBusinessesFeedCache();
+  } catch {
+    // Non-blocking
   }
 
   return NextResponse.json({

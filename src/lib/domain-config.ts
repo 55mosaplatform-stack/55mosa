@@ -63,7 +63,7 @@ async function loadStoredDomainConfig(): Promise<{
       data: {
         id: "default",
         platformName: "55 MOSA",
-        officialEmail: "contact@mosa.rw",
+        officialEmail: "55mosaplatform@gmail.com",
       },
     });
   }

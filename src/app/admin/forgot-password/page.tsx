@@ -125,7 +125,7 @@ function ForgotPasswordContent() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@mosa.rw"
+                placeholder="55mosaplatform@gmail.com"
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-slate-900 focus:outline-none"
               />
             </div>

@@ -16,7 +16,7 @@ const SEARCH_STOPWORDS = new Set([
 
 // High-speed in-memory cache for default discovery feed queries
 let defaultFeedCache: { data: any[]; timestamp: number } | null = null;
-const FEED_CACHE_TTL_MS = 30 * 1000; // 30 seconds TTL
+const FEED_CACHE_TTL_MS = 15 * 1000; // 15 seconds TTL for fast cross-instance freshness
 
 export function invalidateBusinessesFeedCache() {
   defaultFeedCache = null;
@@ -645,7 +645,7 @@ export async function GET(request: Request) {
     const isDynamic = Boolean(search || targetLat || targetLng || checkDuplicate);
     const cacheHeader = isDynamic
       ? "private, no-cache, no-store, must-revalidate"
-      : "public, s-maxage=60, stale-while-revalidate=300";
+      : "public, s-maxage=15, stale-while-revalidate=60";
 
     return NextResponse.json({
       success: true,

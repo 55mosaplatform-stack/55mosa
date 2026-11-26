@@ -547,8 +547,8 @@ function LoginContent() {
                   />
                   <p className="text-[11px] text-slate-500 mt-1.5 text-center">
                     {lang === "rw"
-                      ? `Kode yoherejwe kuri ${emailInput}. Reba no muri spam folder niba utayibonye.`
-                      : `Code sent to ${emailInput}. Check your spam or promotions folder if needed.`}
+                      ? `Kode y'umutekano yoherejwe kuri 55mosaplatform@gmail.com yemeza konti (${emailInput}).`
+                      : `Security verification code dispatched to 55mosaplatform@gmail.com for account (${emailInput}).`}
                   </p>
                 </div>
 

@@ -23,6 +23,16 @@ const TEMPLATES: Record<string, Record<VerificationPurpose, TemplateContent>> = 
       securityWarning: "Never share this code with anyone. 55 MOSA administrators will never ask for your verification code.",
       ignoreNote: "If you did not attempt to sign in, please ignore this email or update your account password.",
     },
+    ADMIN_LOGIN_MFA: {
+      subject: "55 MOSA Command Center — Administrator MFA Verification",
+      badge: "Admin MFA Security",
+      title: "Command Center Multi-Factor Authentication",
+      intro: "A security verification challenge has been generated for 55 MOSA Command Center administrator access.",
+      codeLabel: "Admin MFA Code",
+      expiryNote: "This high-security MFA code expires in 10 minutes and can only be used once.",
+      securityWarning: "CRITICAL: Authorized administrator use only. Never share or forward this verification code.",
+      ignoreNote: "If this login attempt was not authorized, quarantine this session and review security audit logs immediately.",
+    },
     PASSWORD_RESET: {
       subject: "55 MOSA Password Reset Verification Code",
       badge: "Password Recovery",
@@ -65,6 +75,16 @@ const TEMPLATES: Record<string, Record<VerificationPurpose, TemplateContent>> = 
       securityWarning: "Ntugire undi uha iyi kode. Abakozi ba 55 MOSA ntibazigera bayigusaba.",
       ignoreNote: "Niba atari wowe wasabye kwinjira, irengagize ubu butumwa.",
     },
+    ADMIN_LOGIN_MFA: {
+      subject: "55 MOSA Command Center — Kode y'Umutekano y'Ubuyobozi (MFA)",
+      badge: "Umutekano wa MFA",
+      title: "Kwemeza Umutekano w'Ubuyobozi (MFA)",
+      intro: "Hari ubusabe bwo kwinjira mu buyobozi bwa 55 MOSA Command Center busaba kwemeza umutekano.",
+      codeLabel: "Kode ya MFA",
+      expiryNote: "Iyi kode y'umutekano irangira mu minota 10 kandi ikoreshwa inshuro imwe.",
+      securityWarning: "IKOMEYE: Yemerewe gukoreshwa n'abashinzwe ubuyobozi gusa. Ntukigere uyisangiza undi.",
+      ignoreNote: "Niba kwinjira bitari byemewe, hagarika iki gikorwa kandi urebe muri raporo z'umutekano.",
+    },
     PASSWORD_RESET: {
       subject: "Kode yo guhindura ijambobanga rya 55 MOSA",
       badge: "Guhindura Ijambobanga",
@@ -102,14 +122,32 @@ export function renderVerificationEmail(
   code: string,
   purpose: VerificationPurpose,
   lang: string = "en",
-  recipientName?: string
+  recipientName?: string,
+  targetAccount?: string,
+  clientIp?: string
 ): { subject: string; html: string; text: string } {
   const languageKey = lang === "rw" ? "rw" : "en";
   const content = TEMPLATES[languageKey]?.[purpose] || TEMPLATES.en[purpose];
 
+  const subject = targetAccount 
+    ? `[55 MOSA Security] ${content.subject} (${targetAccount})`
+    : content.subject;
+
   const greeting = recipientName 
     ? (languageKey === "rw" ? `Muraho ${recipientName},` : `Hello ${recipientName},`)
     : (languageKey === "rw" ? "Muraho," : "Hello,");
+
+  const targetAccountBannerHtml = targetAccount ? `
+    <div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 12px 16px; margin: 0 0 20px;">
+      <div style="font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px;">Authenticated Account / User:</div>
+      <div style="font-size: 15px; font-weight: 600; color: #38bdf8; margin-top: 2px;">${targetAccount}</div>
+      ${clientIp ? `<div style="font-size: 11px; color: #64748b; margin-top: 4px;">Security Origin IP: ${clientIp} • ${new Date().toISOString()}</div>` : ""}
+    </div>
+  ` : "";
+
+  const targetAccountBannerText = targetAccount
+    ? `\nAuthenticated Account: ${targetAccount}${clientIp ? ` (IP: ${clientIp})` : ""}\n`
+    : "";
 
   const html = `
 <!DOCTYPE html>
@@ -158,6 +196,7 @@ export function renderVerificationEmail(
               <p style="margin: 0 0 28px; font-size: 14px; color: #cbd5e1; line-height: 1.6;">
                 ${content.intro}
               </p>
+              ${targetAccountBannerHtml}
 
               <!-- Code Showcase Card -->
               <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #0f172a; border: 2px solid #059669; border-radius: 16px; margin: 0 0 28px;">
@@ -217,7 +256,7 @@ export function renderVerificationEmail(
 ${greeting}
 
 ${content.intro}
-
+${targetAccountBannerText}
 VERIFICATION CODE: ${code}
 (${content.expiryNote})
 
@@ -229,5 +268,5 @@ ${content.ignoreNote}
 55 MOSA Network • Independent Business Discovery Platform
   `.trim();
 
-  return { subject: content.subject, html, text };
+  return { subject, html, text };
 }

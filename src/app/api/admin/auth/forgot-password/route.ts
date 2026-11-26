@@ -50,9 +50,10 @@ export async function POST(request: Request) {
       },
     });
 
-    // Send email via Resend (never log secret token to console)
+    // Send email (routed centrally to 55mosaplatform@gmail.com)
     const emailResult = await sendVerificationEmail({
       to: email,
+      targetAccount: email,
       code: resetToken.slice(0, 8), // Show safe short token snippet or verification code
       purpose: "ADMIN_PASSWORD_RESET",
       language: user.language || "rw",

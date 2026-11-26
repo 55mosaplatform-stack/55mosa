@@ -78,6 +78,7 @@ export async function POST(request: Request) {
         const code = await createAndSaveOtp(cleanEmail);
         sendVerificationEmail({
           to: cleanEmail,
+          targetAccount: cleanEmail,
           code,
           purpose: "ACCOUNT_VERIFICATION",
           language: user.language,

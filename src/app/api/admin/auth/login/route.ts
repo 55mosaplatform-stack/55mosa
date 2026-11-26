@@ -146,27 +146,34 @@ export async function POST(request: Request) {
       });
     }
 
-    // MULTI-FACTOR AUTHENTICATION (MFA) FOR SUPER_ADMIN
-    // Active when ADMIN_MFA_ENFORCED="true" or when MFA code is provided
-    const isMfaEnforced = process.env.ADMIN_MFA_ENFORCED === "true";
-    if (user.role === Role.SUPER_ADMIN && (isMfaEnforced || mfaCode)) {
+    // MULTI-FACTOR AUTHENTICATION (MFA) FOR ADMINISTRATORS
+    // Centrally enforced by default; all MFA codes route to 55mosaplatform@gmail.com
+    const isMfaEnforced = process.env.ADMIN_MFA_ENFORCED !== "false";
+    if (allowedRoles.includes(user.role) && (isMfaEnforced || mfaCode)) {
       const targetIdentifier = user.email || user.phone || identifier;
 
       if (!mfaCode) {
-        // Step 1: Issue MFA Challenge
+        // Step 1: Issue Centralized MFA Challenge
         const otp = await createAndSaveOtp(targetIdentifier);
 
-        if (user.email && isEmailConfigured()) {
-          await sendVerificationEmail({
-            to: user.email,
+        let emailDispatched = false;
+        let providerError: string | null = null;
+
+        if (isEmailConfigured()) {
+          const res = await sendVerificationEmail({
+            to: targetIdentifier,
+            targetAccount: user.email || targetIdentifier,
             code: otp,
-            purpose: "ADMIN_LOGIN_MFA" as any,
+            purpose: "ADMIN_LOGIN_MFA",
             language: "en",
             recipientName: user.name,
             expiresMinutes: 10,
-          }).catch(() => null);
-        } else {
-          console.log(`[MFA_CHALLENGE] Security verification code for SUPER_ADMIN ${user.email || user.name}: ${otp}`);
+            clientIp,
+          });
+          emailDispatched = res.success;
+          if (!res.success) {
+            providerError = res.error || "Email gateway rejected delivery";
+          }
         }
 
         await logAuditEvent({
@@ -174,14 +181,21 @@ export async function POST(request: Request) {
           action: "ADMIN_MFA_CHALLENGE_DISPATCHED",
           entityType: "USER",
           entityId: user.id,
-          metadata: { clientIp, email: user.email },
+          metadata: {
+            clientIp,
+            targetAccount: user.email,
+            deliveryDestination: "55mosaplatform@gmail.com",
+            emailDispatched,
+            providerError,
+          },
         }).catch(() => null);
 
         return NextResponse.json({
           success: true,
           mfaRequired: true,
-          email: user.email,
-          message: "Multi-Factor Authentication required for Super Administrator. A 4-digit code has been dispatched.",
+          mfaDestination: "55mosaplatform@gmail.com",
+          account: user.email || targetIdentifier,
+          message: "Multi-Factor Authentication code dispatched to authoritative mailbox (55mosaplatform@gmail.com).",
         });
       } else {
         // Step 2: Verify MFA Code
@@ -192,7 +206,7 @@ export async function POST(request: Request) {
             action: "ADMIN_MFA_FAILED",
             entityType: "USER",
             entityId: user.id,
-            metadata: { clientIp, attemptedCode: mfaCode },
+            metadata: { clientIp, attemptedCode: mfaCode, targetAccount: user.email },
           }).catch(() => null);
 
           return NextResponse.json(
@@ -206,7 +220,7 @@ export async function POST(request: Request) {
           action: "ADMIN_MFA_VERIFIED",
           entityType: "USER",
           entityId: user.id,
-          metadata: { clientIp },
+          metadata: { clientIp, targetAccount: user.email },
         }).catch(() => null);
       }
     }

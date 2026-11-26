@@ -246,7 +246,7 @@ function AdminLoginContent() {
                   </button>
                 </div>
                 <p className="text-[11px] text-amber-800">
-                  Enter the 4-digit security code dispatched to your registered administrator address.
+                  Enter the 4-digit security code dispatched to the official platform mailbox (55mosaplatform@gmail.com).
                 </p>
                 <input
                   type="text"
