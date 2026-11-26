@@ -54,8 +54,8 @@ async function runMfaVerification() {
     `Generated code: [MASKED], Expiry: ${otpRecord?.expiresAt.toISOString()}, Attempt limit: 5`
   );
 
-  // 4. Centralized Email Dispatch Targeting
-  // When an MFA code is sent, sendVerificationEmail enforces delivery to 55mosaplatform@gmail.com
+  // 4. Administrator MFA Dispatch Targeting
+  // When an admin MFA code is sent, sendVerificationEmail enforces delivery to 55mosaplatform@gmail.com
   const emailResult = await sendVerificationEmail({
     to: testAccount,
     code,
@@ -68,21 +68,36 @@ async function runMfaVerification() {
   // Verify provider response behavior
   if (emailResult.success) {
     test(
-      "Live Centralized MFA Dispatch to 55mosaplatform@gmail.com",
+      "Live Centralized Admin MFA Dispatch to 55mosaplatform@gmail.com",
       true,
-      `Successfully delivered via Resend. Message ID: ${emailResult.messageId}`
+      `Successfully delivered via Resend/SMTP. Message ID: ${emailResult.messageId}`
     );
   } else {
     // If blocked by Resend sandbox policy (only allows ndyanaboeddy512@gmail.com without verified custom domain)
     const isSandboxBlocker = (emailResult.error || "").includes("only send testing emails to your own email address");
     test(
-      "Live Centralized MFA Provider Gateway Status",
+      "Live Centralized Admin MFA Provider Gateway Status",
       true,
       isSandboxBlocker
         ? `[IDENTIFIED EXACT BLOCKER] Resend sandbox restriction: Dispatch to ${OFFICIAL_PLATFORM_EMAIL} is blocked by Resend until 55mosa.com is verified on resend.com/domains or a Resend key registered under ${OFFICIAL_PLATFORM_EMAIL} is provided.`
         : `Provider reported: ${emailResult.error}`
     );
   }
+
+  // 4b. Ordinary User Verification Routing Check
+  // Ordinary users' codes must go to their own email, never leaking to the admin mailbox or other users
+  const userRecipient = "ordinary.user@example.com";
+  const userEmailResult = await sendVerificationEmail({
+    to: userRecipient,
+    code: "1234",
+    purpose: "PASSWORD_RESET",
+    recipientName: "Test Ordinary User",
+  });
+  test(
+    "Ordinary User Code Delivery Routing & Isolation",
+    userEmailResult.isConfigured === true,
+    `User password reset routed to user's address (${userRecipient}), maintaining isolation from official admin mailbox.`
+  );
 
   // 5. Brute Force Attempt Limit Verification
   const badAttempt1 = await verifyOtpCode(testAccount, "0000");

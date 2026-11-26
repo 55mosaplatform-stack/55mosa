@@ -50,9 +50,11 @@ export function getSenderEmail(): string {
 
 /**
  * Dispatches a branded verification code email.
- * MANDATORY POLICY: All MFA verification codes across all accounts are routed
- * exclusively to the authoritative central security mailbox (55mosaplatform@gmail.com).
- * Original user contact details are preserved for account records and never overwritten.
+ * SECURITY & PRIVACY POLICY:
+ * - Administrator MFA challenges (ADMIN_LOGIN_MFA, ADMIN_PASSWORD_RESET) and platform security
+ *   alerts route strictly to the authoritative platform security mailbox (55mosaplatform@gmail.com).
+ * - Ordinary users' verification and password-recovery codes route to their own verified email addresses.
+ * - Never expose one user's authentication codes to another.
  */
 export async function sendVerificationEmail(
   params: SendVerificationEmailParams
@@ -62,11 +64,21 @@ export async function sendVerificationEmail(
   // 1. Identify the authenticated account
   const targetAccount = params.targetAccount || (to || "").trim().toLowerCase();
 
-  // 2. Centralized MFA Routing:
-  // All MFA codes must always be delivered exclusively to 55mosaplatform@gmail.com
-  const destinationEmail = OFFICIAL_PLATFORM_EMAIL;
+  // 2. Intelligent & Secure MFA Destination Routing:
+  // Administrator MFA routes to 55mosaplatform@gmail.com; user codes route to their own email.
+  const isAdminPurpose = purpose === "ADMIN_LOGIN_MFA" || purpose === "ADMIN_PASSWORD_RESET";
+  const destinationEmail = isAdminPurpose ? OFFICIAL_PLATFORM_EMAIL : (to || "").trim().toLowerCase();
 
-  // 3. Email provider configuration check
+  // 3. Validate destination address for user dispatches
+  if (!isAdminPurpose && !isValidEmail(destinationEmail)) {
+    return {
+      success: false,
+      error: `Invalid destination email address: "${destinationEmail}". Verification codes must be delivered to the user's verified email address.`,
+      isConfigured: isEmailConfigured(),
+    };
+  }
+
+  // 4. Email provider configuration check
   if (!isEmailConfigured()) {
     return {
       success: false,

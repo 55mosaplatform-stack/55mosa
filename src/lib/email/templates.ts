@@ -129,7 +129,9 @@ export function renderVerificationEmail(
   const languageKey = lang === "rw" ? "rw" : "en";
   const content = TEMPLATES[languageKey]?.[purpose] || TEMPLATES.en[purpose];
 
-  const subject = targetAccount 
+  const isAdminPurpose = purpose === "ADMIN_LOGIN_MFA" || purpose === "ADMIN_PASSWORD_RESET";
+
+  const subject = isAdminPurpose && targetAccount 
     ? `[55 MOSA Security] ${content.subject} (${targetAccount})`
     : content.subject;
 
@@ -137,16 +139,16 @@ export function renderVerificationEmail(
     ? (languageKey === "rw" ? `Muraho ${recipientName},` : `Hello ${recipientName},`)
     : (languageKey === "rw" ? "Muraho," : "Hello,");
 
-  const targetAccountBannerHtml = targetAccount ? `
+  const targetAccountBannerHtml = (isAdminPurpose && targetAccount) ? `
     <div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 12px 16px; margin: 0 0 20px;">
-      <div style="font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px;">Authenticated Account / User:</div>
+      <div style="font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px;">Target Administrator Account:</div>
       <div style="font-size: 15px; font-weight: 600; color: #38bdf8; margin-top: 2px;">${targetAccount}</div>
       ${clientIp ? `<div style="font-size: 11px; color: #64748b; margin-top: 4px;">Security Origin IP: ${clientIp} • ${new Date().toISOString()}</div>` : ""}
     </div>
   ` : "";
 
-  const targetAccountBannerText = targetAccount
-    ? `\nAuthenticated Account: ${targetAccount}${clientIp ? ` (IP: ${clientIp})` : ""}\n`
+  const targetAccountBannerText = (isAdminPurpose && targetAccount)
+    ? `\nTarget Administrator Account: ${targetAccount}${clientIp ? ` (IP: ${clientIp})` : ""}\n`
     : "";
 
   const html = `
