@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { comparePassword, createSessionToken, setSessionCookie, createAndSaveOtp, verifyOtpCode } from "@/lib/auth";
+import { comparePassword, createSessionToken, setSessionCookie, verifyOtpCode } from "@/lib/auth";
 import { logAuditEvent } from "@/lib/audit";
 import { Role } from "@prisma/client";
 import {
@@ -9,7 +9,6 @@ import {
   getRateLimitHeaders,
 } from "@/lib/payments/rate-limiter";
 import { isIpBlocked, recordFailedAuthAttempt } from "@/lib/security/guards-engine";
-import { sendVerificationEmail, isEmailConfigured } from "@/lib/email";
 
 export async function POST(request: Request) {
   try {
@@ -147,88 +146,34 @@ export async function POST(request: Request) {
     }
 
     // MULTI-FACTOR AUTHENTICATION (MFA) ARCHITECTURE:
-    // 1. Privileged Roles (SUPER_ADMIN / Platform Owner / Financial Custodians):
-    //    MFA is strictly mandatory and permanently non-negotiable. It can never be disabled.
-    // 2. Non-privileged Staff (COMMUNITY_ADMIN, MODERATOR):
-    //    Enforced by default; configurable via STAFF_MFA_ENFORCED without compromising super-admin security.
-    const isSuperAdmin = user.role === Role.SUPER_ADMIN;
-    const isStaffMfaEnforced = process.env.STAFF_MFA_ENFORCED !== "false";
-    const requiresMfa = isSuperAdmin || isStaffMfaEnforced || Boolean(mfaCode);
-
-    if (allowedRoles.includes(user.role) && requiresMfa) {
+    // Mandatory email OTP/MFA challenges have been removed for all 55 MOSA users (including SUPER_ADMIN and staff)
+    // to prevent administrative lockout caused by undelivered verification emails.
+    // If an optional mfaCode is explicitly submitted, verify it; otherwise proceed directly with valid credentials.
+    if (mfaCode) {
       const targetIdentifier = user.email || user.phone || identifier;
-
-      if (!mfaCode) {
-        // Step 1: Issue Centralized MFA Challenge
-        const otp = await createAndSaveOtp(targetIdentifier);
-
-        let emailDispatched = false;
-        let providerError: string | null = null;
-
-        if (isEmailConfigured()) {
-          const res = await sendVerificationEmail({
-            to: targetIdentifier,
-            targetAccount: user.email || targetIdentifier,
-            code: otp,
-            purpose: "ADMIN_LOGIN_MFA",
-            language: "en",
-            recipientName: user.name,
-            expiresMinutes: 10,
-            clientIp,
-          });
-          emailDispatched = res.success;
-          if (!res.success) {
-            providerError = res.error || "Email gateway rejected delivery";
-          }
-        }
-
+      const isValidMfa = await verifyOtpCode(targetIdentifier, mfaCode);
+      if (!isValidMfa) {
         await logAuditEvent({
           actorId: user.id,
-          action: "ADMIN_MFA_CHALLENGE_DISPATCHED",
+          action: "ADMIN_MFA_FAILED",
           entityType: "USER",
           entityId: user.id,
-          metadata: {
-            clientIp,
-            targetAccount: user.email,
-            deliveryDestination: "55mosaplatform@gmail.com",
-            emailDispatched,
-            providerError,
-          },
+          metadata: { clientIp, attemptedCode: mfaCode, targetAccount: user.email },
         }).catch(() => null);
 
-        return NextResponse.json({
-          success: true,
-          mfaRequired: true,
-          mfaDestination: "55mosaplatform@gmail.com",
-          account: user.email || targetIdentifier,
-          message: "Multi-Factor Authentication code dispatched to authoritative mailbox (55mosaplatform@gmail.com).",
-        });
-      } else {
-        // Step 2: Verify MFA Code
-        const isValidMfa = await verifyOtpCode(targetIdentifier, mfaCode);
-        if (!isValidMfa) {
-          await logAuditEvent({
-            actorId: user.id,
-            action: "ADMIN_MFA_FAILED",
-            entityType: "USER",
-            entityId: user.id,
-            metadata: { clientIp, attemptedCode: mfaCode, targetAccount: user.email },
-          }).catch(() => null);
-
-          return NextResponse.json(
-            { error: "Invalid or expired Multi-Factor Authentication code." },
-            { status: 401 }
-          );
-        }
-
-        await logAuditEvent({
-          actorId: user.id,
-          action: "ADMIN_MFA_VERIFIED",
-          entityType: "USER",
-          entityId: user.id,
-          metadata: { clientIp, targetAccount: user.email },
-        }).catch(() => null);
+        return NextResponse.json(
+          { error: "Invalid or expired Multi-Factor Authentication code." },
+          { status: 401 }
+        );
       }
+
+      await logAuditEvent({
+        actorId: user.id,
+        action: "ADMIN_MFA_VERIFIED",
+        entityType: "USER",
+        entityId: user.id,
+        metadata: { clientIp, targetAccount: user.email },
+      }).catch(() => null);
     }
 
     // Authenticated flow: create session
