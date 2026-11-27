@@ -212,6 +212,14 @@ export async function POST(request: Request) {
       targetEmail = existingUser.email.toLowerCase().trim();
     }
 
+    // Prohibit administrative accounts from initiating passwordless consumer OTP flows
+    if (existingUser && ["SUPER_ADMIN", "COMMUNITY_ADMIN", "MODERATOR"].includes(existingUser.role)) {
+      return NextResponse.json(
+        { error: "Administrative accounts must sign in using their administrator password at the admin portal (/admin/login)." },
+        { status: 403 }
+      );
+    }
+
     if (!targetEmail) {
       return NextResponse.json(
         { error: "A valid email address is required for verification." },
@@ -232,7 +240,7 @@ export async function POST(request: Request) {
     // Generate and persist OTP in database with 10-minute validity
     const otp = await createAndSaveOtp(targetEmail);
 
-    // Send verification email via Resend (routed centrally to 55mosaplatform@gmail.com)
+    // Send verification email via configured email transport
     const emailResult = await sendVerificationEmail({
       to: targetEmail,
       targetAccount: targetEmail,
@@ -255,13 +263,13 @@ export async function POST(request: Request) {
       action: "EMAIL_OTP_REQUESTED",
       entityType: "AUTH",
       entityId: targetEmail,
-      metadata: { requestedRole: role, destination: "55mosaplatform@gmail.com", clientIp },
+      metadata: { requestedRole: role, destination: targetEmail, clientIp },
     });
 
     return NextResponse.json({
       success: true,
-      message: `A 4-digit verification code has been dispatched to 55mosaplatform@gmail.com.`,
-      email: "55mosaplatform@gmail.com",
+      message: `A 4-digit verification code has been dispatched to your email (${targetEmail}).`,
+      email: targetEmail,
       targetAccount: targetEmail,
     });
   } catch (error) {

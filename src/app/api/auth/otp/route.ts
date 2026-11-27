@@ -80,6 +80,14 @@ export async function POST(request: Request) {
       );
     }
 
+    // Prohibit administrative clearance via consumer OTP flow
+    if (["SUPER_ADMIN", "COMMUNITY_ADMIN", "MODERATOR"].includes(user.role)) {
+      return NextResponse.json(
+        { error: "Administrative accounts must sign in using their administrator password at the admin portal (/admin/login)." },
+        { status: 403 }
+      );
+    }
+
     // Generate signed JWT token
     const token = await createSessionToken({
       userId: user.id,

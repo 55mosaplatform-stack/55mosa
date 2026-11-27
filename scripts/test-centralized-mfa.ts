@@ -54,12 +54,12 @@ async function runMfaVerification() {
     `Generated code: [MASKED], Expiry: ${otpRecord?.expiresAt.toISOString()}, Attempt limit: 5`
   );
 
-  // 4. Administrator MFA Dispatch Targeting
-  // When an admin MFA code is sent, sendVerificationEmail enforces delivery to 55mosaplatform@gmail.com
+  // 4. Administrator Security Email Dispatch Targeting
+  // When an admin security code is sent, sendVerificationEmail enforces delivery to 55mosaplatform@gmail.com
   const emailResult = await sendVerificationEmail({
     to: testAccount,
     code,
-    purpose: "ADMIN_LOGIN_MFA",
+    purpose: "ADMIN_PASSWORD_RESET",
     recipientName: "Test Pilot Administrator",
     targetAccount: testAccount,
     clientIp: "127.0.0.1",
@@ -68,7 +68,7 @@ async function runMfaVerification() {
   // Verify provider response behavior
   if (emailResult.success) {
     test(
-      "Live Centralized Admin MFA Dispatch to 55mosaplatform@gmail.com",
+      "Live Centralized Admin Security Email Dispatch to 55mosaplatform@gmail.com",
       true,
       `Successfully delivered via Resend/SMTP. Message ID: ${emailResult.messageId}`
     );
@@ -76,7 +76,7 @@ async function runMfaVerification() {
     // If blocked by Resend sandbox policy (only allows ndyanaboeddy512@gmail.com without verified custom domain)
     const isSandboxBlocker = (emailResult.error || "").includes("only send testing emails to your own email address");
     test(
-      "Live Centralized Admin MFA Provider Gateway Status",
+      "Live Centralized Admin Security Email Provider Gateway Status",
       true,
       isSandboxBlocker
         ? `[IDENTIFIED EXACT BLOCKER] Resend sandbox restriction: Dispatch to ${OFFICIAL_PLATFORM_EMAIL} is blocked by Resend until 55mosa.com is verified on resend.com/domains or a Resend key registered under ${OFFICIAL_PLATFORM_EMAIL} is provided.`

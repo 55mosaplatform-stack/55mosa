@@ -1,6 +1,5 @@
 export type VerificationPurpose = 
   | "ACCOUNT_LOGIN"
-  | "ADMIN_LOGIN_MFA"
   | "PASSWORD_RESET"
   | "ACCOUNT_VERIFICATION"
   | "ADMIN_PASSWORD_RESET";

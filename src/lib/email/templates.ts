@@ -23,16 +23,6 @@ const TEMPLATES: Record<string, Record<VerificationPurpose, TemplateContent>> = 
       securityWarning: "Never share this code with anyone. 55 MOSA administrators will never ask for your verification code.",
       ignoreNote: "If you did not attempt to sign in, please ignore this email or update your account password.",
     },
-    ADMIN_LOGIN_MFA: {
-      subject: "55 MOSA Command Center — Administrator MFA Verification",
-      badge: "Admin MFA Security",
-      title: "Command Center Multi-Factor Authentication",
-      intro: "A security verification challenge has been generated for 55 MOSA Command Center administrator access.",
-      codeLabel: "Admin MFA Code",
-      expiryNote: "This high-security MFA code expires in 10 minutes and can only be used once.",
-      securityWarning: "CRITICAL: Authorized administrator use only. Never share or forward this verification code.",
-      ignoreNote: "If this login attempt was not authorized, quarantine this session and review security audit logs immediately.",
-    },
     PASSWORD_RESET: {
       subject: "55 MOSA Password Reset Verification Code",
       badge: "Password Recovery",
@@ -74,16 +64,6 @@ const TEMPLATES: Record<string, Record<VerificationPurpose, TemplateContent>> = 
       expiryNote: "Iyi kode irangira mu minota 10 kandi ikoreshwa inshuro imwe gusa.",
       securityWarning: "Ntugire undi uha iyi kode. Abakozi ba 55 MOSA ntibazigera bayigusaba.",
       ignoreNote: "Niba atari wowe wasabye kwinjira, irengagize ubu butumwa.",
-    },
-    ADMIN_LOGIN_MFA: {
-      subject: "55 MOSA Command Center — Kode y'Umutekano y'Ubuyobozi (MFA)",
-      badge: "Umutekano wa MFA",
-      title: "Kwemeza Umutekano w'Ubuyobozi (MFA)",
-      intro: "Hari ubusabe bwo kwinjira mu buyobozi bwa 55 MOSA Command Center busaba kwemeza umutekano.",
-      codeLabel: "Kode ya MFA",
-      expiryNote: "Iyi kode y'umutekano irangira mu minota 10 kandi ikoreshwa inshuro imwe.",
-      securityWarning: "IKOMEYE: Yemerewe gukoreshwa n'abashinzwe ubuyobozi gusa. Ntukigere uyisangiza undi.",
-      ignoreNote: "Niba kwinjira bitari byemewe, hagarika iki gikorwa kandi urebe muri raporo z'umutekano.",
     },
     PASSWORD_RESET: {
       subject: "Kode yo guhindura ijambobanga rya 55 MOSA",
@@ -129,7 +109,7 @@ export function renderVerificationEmail(
   const languageKey = lang === "rw" ? "rw" : "en";
   const content = TEMPLATES[languageKey]?.[purpose] || TEMPLATES.en[purpose];
 
-  const isAdminPurpose = purpose === "ADMIN_LOGIN_MFA" || purpose === "ADMIN_PASSWORD_RESET";
+  const isAdminPurpose = purpose === "ADMIN_PASSWORD_RESET";
 
   const subject = isAdminPurpose && targetAccount 
     ? `[55 MOSA Security] ${content.subject} (${targetAccount})`

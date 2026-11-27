@@ -51,7 +51,7 @@ export function getSenderEmail(): string {
 /**
  * Dispatches a branded verification code email.
  * SECURITY & PRIVACY POLICY:
- * - Administrator MFA challenges (ADMIN_LOGIN_MFA, ADMIN_PASSWORD_RESET) and platform security
+ * - Administrator security operations (ADMIN_PASSWORD_RESET) and platform security
  *   alerts route strictly to the authoritative platform security mailbox (55mosaplatform@gmail.com).
  * - Ordinary users' verification and password-recovery codes route to their own verified email addresses.
  * - Never expose one user's authentication codes to another.
@@ -64,9 +64,9 @@ export async function sendVerificationEmail(
   // 1. Identify the authenticated account
   const targetAccount = params.targetAccount || (to || "").trim().toLowerCase();
 
-  // 2. Intelligent & Secure MFA Destination Routing:
-  // Administrator MFA routes to 55mosaplatform@gmail.com; user codes route to their own email.
-  const isAdminPurpose = purpose === "ADMIN_LOGIN_MFA" || purpose === "ADMIN_PASSWORD_RESET";
+  // 2. Intelligent & Secure Destination Routing:
+  // Administrator security alerts route to 55mosaplatform@gmail.com; user codes route to their own email.
+  const isAdminPurpose = purpose === "ADMIN_PASSWORD_RESET";
   const destinationEmail = isAdminPurpose ? OFFICIAL_PLATFORM_EMAIL : (to || "").trim().toLowerCase();
 
   // 3. Validate destination address for user dispatches
