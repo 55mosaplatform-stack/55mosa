@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { comparePassword, createSessionToken, setSessionCookie, verifyOtpCode } from "@/lib/auth";
+import { comparePassword, createSessionToken, setSessionCookie } from "@/lib/auth";
 import { logAuditEvent } from "@/lib/audit";
 import { Role } from "@prisma/client";
 import {
@@ -39,7 +39,6 @@ export async function POST(request: Request) {
     const body = await request.json();
     const identifier = (body.email || body.phone || body.identifier || "").trim().toLowerCase();
     const password = body.password;
-    const mfaCode = body.mfaCode ? String(body.mfaCode).trim() : null;
 
     if (!identifier || !password) {
       return NextResponse.json(
@@ -143,37 +142,6 @@ export async function POST(request: Request) {
           role: user.role,
         },
       });
-    }
-
-    // MULTI-FACTOR AUTHENTICATION (MFA) ARCHITECTURE:
-    // Mandatory email OTP/MFA challenges have been removed for all 55 MOSA users (including SUPER_ADMIN and staff)
-    // to prevent administrative lockout caused by undelivered verification emails.
-    // If an optional mfaCode is explicitly submitted, verify it; otherwise proceed directly with valid credentials.
-    if (mfaCode) {
-      const targetIdentifier = user.email || user.phone || identifier;
-      const isValidMfa = await verifyOtpCode(targetIdentifier, mfaCode);
-      if (!isValidMfa) {
-        await logAuditEvent({
-          actorId: user.id,
-          action: "ADMIN_MFA_FAILED",
-          entityType: "USER",
-          entityId: user.id,
-          metadata: { clientIp, attemptedCode: mfaCode, targetAccount: user.email },
-        }).catch(() => null);
-
-        return NextResponse.json(
-          { error: "Invalid or expired Multi-Factor Authentication code." },
-          { status: 401 }
-        );
-      }
-
-      await logAuditEvent({
-        actorId: user.id,
-        action: "ADMIN_MFA_VERIFIED",
-        entityType: "USER",
-        entityId: user.id,
-        metadata: { clientIp, targetAccount: user.email },
-      }).catch(() => null);
     }
 
     // Authenticated flow: create session

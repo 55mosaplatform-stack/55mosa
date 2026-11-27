@@ -27,10 +27,6 @@ function AdminLoginContent() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Multi-Factor Authentication (MFA) state
-  const [isMfaRequired, setIsMfaRequired] = useState(false);
-  const [mfaCode, setMfaCode] = useState("");
-
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
@@ -44,19 +40,12 @@ function AdminLoginContent() {
         body: JSON.stringify({
           identifier,
           password,
-          mfaCode: isMfaRequired ? mfaCode : undefined,
         }),
       });
       const data = await res.json();
 
       if (!res.ok) {
         setErrorMsg(data.error || "Invalid administrator credentials.");
-        return;
-      }
-
-      if (data.mfaRequired) {
-        setIsMfaRequired(true);
-        setSuccessMsg(data.message || "Multi-Factor Authentication required. Enter the verification code sent to your email.");
         return;
       }
 
@@ -226,40 +215,6 @@ function AdminLoginContent() {
               </div>
             </div>
 
-            {isMfaRequired && (
-              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-2">
-                <div className="font-bold flex items-center justify-between text-amber-950">
-                  <div className="flex items-center gap-1.5">
-                    <KeyRound className="w-4 h-4 text-amber-700" />
-                    <span>Multi-Factor Authentication (MFA)</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMfaRequired(false);
-                      setMfaCode("");
-                      setErrorMsg("");
-                    }}
-                    className="text-[10px] text-amber-800 underline hover:text-amber-950"
-                  >
-                    Change account
-                  </button>
-                </div>
-                <p className="text-[11px] text-amber-800">
-                  Enter the 4-digit security code dispatched to the official platform mailbox (55mosaplatform@gmail.com).
-                </p>
-                <input
-                  type="text"
-                  required
-                  maxLength={6}
-                  value={mfaCode}
-                  onChange={(e) => setMfaCode(e.target.value.trim())}
-                  placeholder="Enter 4-digit code"
-                  className="w-full px-3 py-2 rounded-xl border border-amber-300 bg-white text-xs font-mono font-bold tracking-widest text-slate-900 text-center focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                />
-              </div>
-            )}
-
             <button
               type="submit"
               disabled={loading}
@@ -269,11 +224,6 @@ function AdminLoginContent() {
                 <>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                   <span>Authenticating Clearance...</span>
-                </>
-              ) : isMfaRequired ? (
-                <>
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  <span>Verify MFA & Enter Command Center</span>
                 </>
               ) : (
                 <>
