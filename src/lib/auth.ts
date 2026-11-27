@@ -160,8 +160,8 @@ export async function getCurrentUser(req?: Request | NextRequest): Promise<User 
 /**
  * Verifies that the current user has one of the allowed roles.
  */
-export async function requireAuth(allowedRoles?: Role[]): Promise<{ user: User | null; error?: string; status?: number }> {
-  const user = await getCurrentUser();
+export async function requireAuth(allowedRoles?: Role[], req?: Request | NextRequest): Promise<{ user: User | null; error?: string; status?: number }> {
+  const user = await getCurrentUser(req);
   if (!user) {
     return { user: null, error: "Authentication required", status: 401 };
   }

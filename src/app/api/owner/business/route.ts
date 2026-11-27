@@ -17,7 +17,7 @@ import { invalidateBusinessesFeedCache } from "@/app/api/businesses/route";
  * Returns the authenticated owner's business with operational health, reminders, and confirmation status.
  */
 export async function GET(request: Request) {
-  const auth = await requireAuth([Role.BUSINESS_OWNER, Role.SUPER_ADMIN, Role.COMMUNITY_ADMIN]);
+  const auth = await requireAuth([Role.BUSINESS_OWNER, Role.SUPER_ADMIN, Role.COMMUNITY_ADMIN], request);
   if (auth.error || !auth.user) {
     return NextResponse.json({ error: auth.error || "Unauthorized" }, { status: auth.status || 401 });
   }
