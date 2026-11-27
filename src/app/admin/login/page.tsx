@@ -3,7 +3,7 @@
 import React, { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Shield, Lock, User, KeyRound, AlertTriangle, CheckCircle2, ArrowRight, ShieldCheck, RefreshCw, Eye, EyeOff } from "lucide-react";
+import { Shield, Lock, User, KeyRound, AlertTriangle, CheckCircle2, ArrowRight, ShieldCheck, RefreshCw, Eye, EyeOff, Smartphone } from "lucide-react";
 
 function AdminLoginContent() {
   const router = useRouter();
@@ -27,6 +27,13 @@ function AdminLoginContent() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  // Reliable Multi-Factor Authentication State
+  const [isMfaRequired, setIsMfaRequired] = useState(false);
+  const [mfaMethod, setMfaMethod] = useState<"TOTP" | "RECOVERY">("TOTP");
+  const [totpCode, setTotpCode] = useState("");
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [recoveryAvailable, setRecoveryAvailable] = useState(true);
+
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
@@ -49,6 +56,13 @@ function AdminLoginContent() {
         return;
       }
 
+      if (data.mfaRequired) {
+        setIsMfaRequired(true);
+        setRecoveryAvailable(data.recoveryCodesAvailable !== false);
+        setSuccessMsg("Credentials verified. Enter your two-factor code to proceed.");
+        return;
+      }
+
       if (data.mustChangePassword) {
         setIsForcedChange(true);
         setPendingAdminEmail(data.user?.email || identifier);
@@ -58,6 +72,41 @@ function AdminLoginContent() {
       }
 
       setSuccessMsg("Administrator session authorized. Accessing Command Center...");
+      setTimeout(() => {
+        router.push(redirectTarget);
+      }, 700);
+    } catch {
+      setErrorMsg("Network error connecting to administrator authentication service.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMfaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg("");
+    setSuccessMsg("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/admin/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          identifier,
+          password,
+          totpCode: mfaMethod === "TOTP" ? totpCode : undefined,
+          recoveryCode: mfaMethod === "RECOVERY" ? recoveryCode : undefined,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setErrorMsg(data.error || "MFA verification failed. Please try again.");
+        return;
+      }
+
+      setSuccessMsg("Multi-Factor Authentication verified. Accessing Command Center...");
       setTimeout(() => {
         router.push(redirectTarget);
       }, 700);
@@ -157,8 +206,117 @@ function AdminLoginContent() {
           </div>
         )}
 
-        {/* Form 1: Standard Admin Sign In */}
-        {!isForcedChange ? (
+        {/* Form 1: Multi-Factor Authentication Challenge */}
+        {isMfaRequired ? (
+          <form onSubmit={handleMfaSubmit} className="space-y-4">
+            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1">
+              <div className="font-bold flex items-center gap-1.5 text-emerald-800">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <span>Multi-Factor Authentication Required</span>
+              </div>
+              <p className="text-[11px] text-emerald-700">
+                Enter the 6-digit code from Google Authenticator, Microsoft Authenticator, or an emergency recovery code.
+              </p>
+            </div>
+
+            {/* Method Switcher Tabs */}
+            <div className="flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => { setMfaMethod("TOTP"); setErrorMsg(""); }}
+                className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  mfaMethod === "TOTP" ? "bg-white text-slate-900 shadow-xs font-bold" : "text-slate-500 hover:text-slate-900"
+                }`}
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Authenticator App</span>
+              </button>
+
+              {recoveryAvailable && (
+                <button
+                  type="button"
+                  onClick={() => { setMfaMethod("RECOVERY"); setErrorMsg(""); }}
+                  className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    mfaMethod === "RECOVERY" ? "bg-white text-slate-900 shadow-xs font-bold" : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>Recovery Code</span>
+                </button>
+              )}
+            </div>
+
+            {mfaMethod === "TOTP" ? (
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  6-Digit Authenticator Code
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    autoFocus
+                    value={totpCode}
+                    onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+                    placeholder="123456"
+                    className="w-full px-3.5 py-3 rounded-xl border border-slate-300 text-center font-mono text-lg font-bold tracking-widest text-slate-900 focus:ring-2 focus:ring-slate-900 focus:outline-none"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">Codes rotate every 30 seconds</p>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Emergency Recovery Code
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={recoveryCode}
+                  onChange={(e) => setRecoveryCode(e.target.value.toUpperCase())}
+                  placeholder="XXXX-XXXX"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-center font-mono text-sm font-bold text-slate-900 tracking-wider focus:ring-2 focus:ring-slate-900 focus:outline-none"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">One-time emergency backup code</p>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading || (mfaMethod === "TOTP" ? totpCode.length !== 6 : !recoveryCode.trim())}
+              className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all disabled:opacity-50 cursor-pointer shadow-md flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Verifying MFA Security...</span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Verify MFA & Enter Command Center</span>
+                </>
+              )}
+            </button>
+
+            <div className="text-center pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMfaRequired(false);
+                  setTotpCode("");
+                  setRecoveryCode("");
+                  setErrorMsg("");
+                }}
+                className="text-xs text-slate-500 hover:text-slate-900 font-medium cursor-pointer"
+              >
+                ← Back to password sign-in
+              </button>
+            </div>
+          </form>
+        ) : !isForcedChange ? (
           <form onSubmit={handleAdminLogin} className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">

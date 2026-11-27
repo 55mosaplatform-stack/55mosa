@@ -63,6 +63,7 @@ import { PlatformIdentityTab } from "@/components/admin/PlatformIdentityTab";
 import { RegistrationPaymentsTab } from "@/components/admin/RegistrationPaymentsTab";
 import { SecurityAndOperationsRadarTab } from "@/components/admin/SecurityAndOperationsRadarTab";
 import { MosaDirectInboxTab } from "@/components/admin/MosaDirectInboxTab";
+import { AdminMfaSettingsModal } from "@/components/admin/AdminMfaSettingsModal";
 import { SmartLocationForm, SmartLocationFormData } from "@/components/location/SmartLocationForm";
 import { calculateLocationCompleteness } from "@/lib/location-quality";
 import { RWANDA_HIERARCHY } from "@/lib/rwanda-geo";
@@ -242,6 +243,7 @@ export default function AdminPanelPage() {
     scheduledAt: "",
   });
   const [announcementSubmitting, setAnnouncementSubmitting] = useState(false);
+  const [showMfaModal, setShowMfaModal] = useState(false);
   const [announcementActionMsg, setAnnouncementActionMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [businessSearchInModal, setBusinessSearchInModal] = useState("");
 
@@ -4175,7 +4177,15 @@ export default function AdminPanelPage() {
                 </div>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 space-y-2">
+                <button
+                  onClick={() => setShowMfaModal(true)}
+                  className="w-full py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <span>Two-Factor Authentication (MFA Settings)</span>
+                </button>
+
                 <button
                   onClick={async () => {
                     if (confirm("Are you sure you want to sign out of the MOSA Command Center?")) {
@@ -4188,6 +4198,8 @@ export default function AdminPanelPage() {
                   Sign Out of Command Center
                 </button>
               </div>
+
+              <AdminMfaSettingsModal isOpen={showMfaModal} onClose={() => setShowMfaModal(false)} />
             </div>
 
             {/* Platform Safeguards */}

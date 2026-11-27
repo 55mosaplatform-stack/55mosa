@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { comparePassword, createSessionToken, setSessionCookie } from "@/lib/auth";
+import { verifyTotpCode, verifyAndConsumeRecoveryCode } from "@/lib/security/totp";
 import { logAuditEvent } from "@/lib/audit";
 import { Role } from "@prisma/client";
 import {
@@ -39,6 +40,8 @@ export async function POST(request: Request) {
     const body = await request.json();
     const identifier = (body.email || body.phone || body.identifier || "").trim().toLowerCase();
     const password = body.password;
+    const totpCode = body.totpCode || (body.mfaCode && String(body.mfaCode).trim().length === 6 ? body.mfaCode : null);
+    const recoveryCode = body.recoveryCode || (body.mfaCode && String(body.mfaCode).includes("-") ? body.mfaCode : null);
 
     if (!identifier || !password) {
       return NextResponse.json(
@@ -47,13 +50,16 @@ export async function POST(request: Request) {
       );
     }
 
-    // Find administrator by email or phone
+    // Find administrator by email or phone, including their MFA configuration profile
     const user = await prisma.user.findFirst({
       where: {
         OR: [
           { email: identifier },
           { phone: identifier },
         ],
+      },
+      include: {
+        mfaProfile: true,
       },
     });
 
@@ -144,6 +150,109 @@ export async function POST(request: Request) {
       });
     }
 
+    // -------------------------------------------------------------------------
+    // RELIABLE MULTI-FACTOR AUTHENTICATION (TOTP Authenticator & Recovery Codes)
+    // -------------------------------------------------------------------------
+    const mfaProfile = user.mfaProfile;
+    if (mfaProfile && mfaProfile.totpEnabled && mfaProfile.totpSecret) {
+      // If no TOTP code or recovery code is supplied, return challenge prompt
+      if (!totpCode && !recoveryCode) {
+        return NextResponse.json({
+          success: true,
+          mfaRequired: true,
+          mfaType: "TOTP",
+          email: user.email,
+          recoveryCodesAvailable: (mfaProfile.recoveryCodes?.length || 0) > 0,
+          message: "Multi-Factor Authentication required. Enter the 6-digit code from your authenticator app or an emergency recovery code.",
+        });
+      }
+
+      // 1. Verify with 6-digit TOTP code
+      if (totpCode) {
+        const cleanTotp = String(totpCode).trim().replace(/\D/g, "");
+        const verification = verifyTotpCode(mfaProfile.totpSecret, cleanTotp, {
+          lastUsedStep: mfaProfile.lastUsedStep,
+        });
+
+        if (!verification.isValid) {
+          await logAuditEvent({
+            actorId: user.id,
+            action: "ADMIN_MFA_FAILED",
+            entityType: "USER",
+            entityId: user.id,
+            metadata: { clientIp, reason: verification.reason || "INVALID_TOTP" },
+          }).catch(() => null);
+
+          await recordFailedAuthAttempt({
+            ip: clientIp,
+            identifier,
+            userAgent: request.headers.get("user-agent") || undefined,
+          }).catch(() => null);
+
+          return NextResponse.json(
+            { error: verification.reason || "Invalid authenticator code. Please check your app and try again." },
+            { status: 401 }
+          );
+        }
+
+        // Update lastUsedStep in PostgreSQL to prevent replay attacks
+        await prisma.adminMfaProfile.update({
+          where: { userId: user.id },
+          data: { lastUsedStep: verification.step },
+        });
+
+        await logAuditEvent({
+          actorId: user.id,
+          action: "ADMIN_MFA_VERIFIED",
+          entityType: "USER",
+          entityId: user.id,
+          metadata: { clientIp, method: "TOTP" },
+        });
+      }
+      // 2. Or verify with emergency recovery code
+      else if (recoveryCode) {
+        const recoveryResult = verifyAndConsumeRecoveryCode(
+          String(recoveryCode).trim(),
+          mfaProfile.recoveryCodes
+        );
+
+        if (!recoveryResult.isValid) {
+          await logAuditEvent({
+            actorId: user.id,
+            action: "ADMIN_MFA_RECOVERY_FAILED",
+            entityType: "USER",
+            entityId: user.id,
+            metadata: { clientIp },
+          }).catch(() => null);
+
+          await recordFailedAuthAttempt({
+            ip: clientIp,
+            identifier,
+            userAgent: request.headers.get("user-agent") || undefined,
+          }).catch(() => null);
+
+          return NextResponse.json(
+            { error: "Invalid or already used emergency recovery code." },
+            { status: 401 }
+          );
+        }
+
+        // Consume the recovery code (single use)
+        await prisma.adminMfaProfile.update({
+          where: { userId: user.id },
+          data: { recoveryCodes: recoveryResult.remainingHashedCodes },
+        });
+
+        await logAuditEvent({
+          actorId: user.id,
+          action: "ADMIN_MFA_RECOVERY_CODE_CONSUMED",
+          entityType: "USER",
+          entityId: user.id,
+          metadata: { clientIp, remainingCount: recoveryResult.remainingHashedCodes.length },
+        });
+      }
+    }
+
     // Authenticated flow: create session
     const token = await createSessionToken({
       userId: user.id,
@@ -175,6 +284,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       mustChangePassword: false,
+      mfaEnrollmentRecommended: user.role === Role.SUPER_ADMIN && !mfaProfile?.totpEnabled,
       user: {
         id: user.id,
         email: user.email,
@@ -187,3 +297,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Authentication system error" }, { status: 500 });
   }
 }
+
