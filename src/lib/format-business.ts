@@ -1,5 +1,6 @@
 import { Business, RwandaLocation, ProductItem, BusinessHours, DataStatus, PriceType } from "@/types";
 import { formatCategoryClassification } from "./taxonomy";
+import { resolveBusinessVisualMedia } from "./media-fallback";
 
 /**
  * Format any raw business record (e.g. from Prisma or fallback)
@@ -174,10 +175,32 @@ export function formatBusinessRecord(raw: any): Business {
       communityConfirmationsCount: dataStatus === "VERIFIED" ? 14 : 0,
       recentActivityDate: raw.updatedAt ? new Date(raw.updatedAt).toISOString() : new Date().toISOString(),
     },
-    photos: Array.isArray(raw.photos) && raw.photos.length > 0
-      ? raw.photos.filter((p: string) => !p.includes("photo-1544816155-12df9643f363"))
-      : (raw.coverImage && !raw.coverImage.includes("photo-1544816155-12df9643f363") ? [raw.coverImage] : []),
-    coverImage: raw.coverImage && !raw.coverImage.includes("photo-1544816155-12df9643f363") ? raw.coverImage : null,
+    ...(() => {
+      const resolvedMedia = resolveBusinessVisualMedia({
+        coverImage: raw.coverImage,
+        photos: Array.isArray(raw.photos) ? raw.photos : undefined,
+        media: Array.isArray(raw.media) ? raw.media : (Array.isArray(raw.businessMedia) ? raw.businessMedia : undefined),
+        products: products,
+        logo: raw.logo,
+        category: raw.category,
+        mainCategory: raw.mainCategory,
+      });
+
+      const rawMediaPhotos = Array.isArray(raw.media)
+        ? raw.media
+            .filter((m: any) => m && m.mediaType !== "VIDEO" && m.moderationStatus !== "REMOVED" && m.url && !m.url.includes("photo-1544816155-12df9643f363"))
+            .map((m: any) => m.url)
+        : [];
+
+      const effectivePhotos = Array.isArray(raw.photos) && raw.photos.length > 0
+        ? raw.photos.filter((p: string) => !p.includes("photo-1544816155-12df9643f363"))
+        : (rawMediaPhotos.length > 0 ? rawMediaPhotos : (resolvedMedia.url ? [resolvedMedia.url] : []));
+
+      return {
+        photos: effectivePhotos,
+        coverImage: resolvedMedia.url || (raw.coverImage && !raw.coverImage.includes("photo-1544816155-12df9643f363") ? raw.coverImage : null),
+      };
+    })(),
     openingHours,
     isOpenNow: typeof raw.isOpenNow === "boolean" ? raw.isOpenNow : true,
     priceRange: raw.priceRange || "LOW",

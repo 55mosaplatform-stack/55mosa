@@ -168,9 +168,7 @@ export function serializePublicBusiness(raw: any): PublicBusiness {
           priceType: p.priceType,
           isEstimated: p.isEstimated,
           isService: Boolean((p as any).isService),
-          mediaUrl: (p as any).mediaUrl && (p as any).mediaUrl.startsWith("data:image/") && (p as any).mediaUrl.length > 8192
-            ? null
-            : ((p as any).mediaUrl || null),
+          mediaUrl: (p as any).mediaUrl || null,
           mediaType: (p as any).mediaType || "IMAGE",
           mediaCaption: (p as any).mediaCaption || null,
           currency: p.currency || "RWF",

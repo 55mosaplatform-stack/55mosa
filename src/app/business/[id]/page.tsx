@@ -55,6 +55,7 @@ import { BusinessCard } from "@/components/discovery/BusinessCard";
 import { getGoogleMapsDirectionsUrl } from "@/lib/location-quality";
 import { getBusinessOperatingModel } from "@/lib/taxonomy";
 import { isVideoMedia, isLegacyBagPlaceholder } from "@/lib/media-upload";
+import { getCategoryFallbackCover, getProductFallbackImage } from "@/lib/media-fallback";
 import { useLightbox } from "@/lib/lightbox-context";
 
 export default function BusinessDetailPage({
@@ -425,6 +426,13 @@ export default function BusinessDetailPage({
                 src={business.coverImage!}
                 alt={displayName}
                 data-testid="business-cover-image"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  const fallback = getCategoryFallbackCover(business.mainCategory || business.category);
+                  if (target.src !== fallback) {
+                    target.src = fallback;
+                  }
+                }}
                 onClick={() =>
                   openLightbox({
                     src: business.coverImage!,
@@ -437,31 +445,20 @@ export default function BusinessDetailPage({
               />
             )
           ) : (
-            <div className="w-full h-full bg-slate-950 flex flex-col items-center justify-center text-center p-8 relative overflow-hidden">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(16,185,129,0.15),transparent_70%)] pointer-events-none" />
-              {business.logo ? (
-                <img
-                  src={business.logo}
-                  alt={displayName}
-                  onClick={() =>
-                    openLightbox({
-                      src: business.logo!,
-                      alt: displayName,
-                      caption: `${displayName} — Official Logo`,
-                      allowDownload: true,
-                    })
-                  }
-                  className="relative z-10 w-24 h-24 rounded-3xl object-contain bg-white/10 p-2 border border-white/20 shadow-2xl mb-3 cursor-zoom-view hover:scale-105 transition-transform"
-                />
-              ) : (
-                <div className="relative z-10 w-20 h-20 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center text-white font-extrabold text-4xl shadow-xl mb-3">
-                  {displayName ? displayName.charAt(0).toUpperCase() : "M"}
-                </div>
-              )}
-              <div className="relative z-10 text-[11px] font-bold text-amber-400 tracking-[0.2em] uppercase bg-white/5 px-4 py-1.5 rounded-full border border-white/10">
-                {(lang === "rw" ? business.classificationPathRw : business.classificationPath) || displayCategory}
-              </div>
-            </div>
+            <img
+              src={getCategoryFallbackCover(business.mainCategory || business.category)}
+              alt={displayName}
+              data-testid="business-cover-image"
+              onClick={() =>
+                openLightbox({
+                  src: getCategoryFallbackCover(business.mainCategory || business.category),
+                  alt: displayName,
+                  caption: `${displayName} — Discovery Photo`,
+                  allowDownload: true,
+                })
+              }
+              className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-700 ease-out cursor-zoom-view"
+            />
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950/95 via-slate-950/40 to-transparent pointer-events-none" />
           
@@ -788,49 +785,59 @@ export default function BusinessDetailPage({
                   return (
                     <div key={item.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group">
                       <div className="flex items-start gap-3.5">
-                        {item.mediaUrl && (
-                          <button
-                            type="button"
-                            aria-label={`View enlarged ${item.isService ? "service" : "product"} image: ${item.name}`}
-                            data-testid={`item-thumb-${item.isService ? "service" : "product"}-${item.id}`}
-                            data-item-type={item.isService ? "service" : "product"}
-                            onClick={() => {
-                              if (item.mediaType !== "VIDEO") {
-                                openLightbox({
-                                  src: item.mediaUrl!,
-                                  alt: item.mediaCaption || item.name,
-                                  caption: `${item.name} (${item.isService ? (lang === "rw" ? "Serivisi" : "Service") : (lang === "rw" ? "Igicuruzwa" : "Product")} • ${priceLabel}) — ${displayName}`,
-                                  allowDownload: true,
-                                });
-                              }
-                            }}
-                            className="relative w-16 h-16 sm:w-20 sm:h-20 shrink-0 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 cursor-zoom-view group/thumb p-0 text-left focus:outline-hidden focus:ring-2 focus:ring-emerald-500 shadow-xs hover:shadow-md transition-shadow"
-                          >
-                            {item.mediaType === "VIDEO" ? (
-                              <div className="w-full h-full bg-slate-900 flex flex-col items-center justify-center text-emerald-400 group-hover/thumb:scale-105 transition-transform">
-                                <Video className="w-6 h-6" />
-                                <span className="text-[8px] font-black uppercase tracking-wider text-white mt-0.5">Video</span>
-                              </div>
-                            ) : item.mediaType === "FILE" ? (
-                              <div className="w-full h-full bg-slate-100 flex flex-col items-center justify-center text-slate-700 group-hover/thumb:scale-105 transition-transform">
-                                <FileText className="w-6 h-6 text-emerald-600" />
-                                <span className="text-[8px] font-black uppercase tracking-wider text-slate-600 mt-0.5">File</span>
-                              </div>
-                            ) : (
-                              <>
-                                <img
-                                  src={item.mediaUrl}
-                                  alt={item.mediaCaption || item.name}
-                                  data-testid={`item-image-${item.isService ? "service" : "product"}`}
-                                  className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-300"
-                                />
-                                <div className="absolute inset-0 bg-black/0 group-hover/thumb:bg-black/25 flex items-center justify-center transition-colors">
-                                  <Maximize2 className="w-4 h-4 text-white opacity-0 group-hover/thumb:opacity-100 transition-opacity drop-shadow-sm" />
+                        {(() => {
+                          const itemImgSrc = item.mediaUrl || getProductFallbackImage(business.mainCategory || business.category, item.isService);
+                          const fallbackSrc = getProductFallbackImage(business.mainCategory || business.category, item.isService);
+                          return (
+                            <button
+                              type="button"
+                              aria-label={`View enlarged ${item.isService ? "service" : "product"} image: ${item.name}`}
+                              data-testid={`item-thumb-${item.isService ? "service" : "product"}-${item.id}`}
+                              data-item-type={item.isService ? "service" : "product"}
+                              onClick={() => {
+                                if (item.mediaType !== "VIDEO") {
+                                  openLightbox({
+                                    src: itemImgSrc,
+                                    alt: item.mediaCaption || item.name,
+                                    caption: `${item.name} (${item.isService ? (lang === "rw" ? "Serivisi" : "Service") : (lang === "rw" ? "Igicuruzwa" : "Product")} • ${priceLabel}) — ${displayName}`,
+                                    allowDownload: true,
+                                  });
+                                }
+                              }}
+                              className="relative w-16 h-16 sm:w-20 sm:h-20 shrink-0 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 cursor-zoom-view group/thumb p-0 text-left focus:outline-hidden focus:ring-2 focus:ring-emerald-500 shadow-xs hover:shadow-md transition-shadow"
+                            >
+                              {item.mediaType === "VIDEO" ? (
+                                <div className="w-full h-full bg-slate-900 flex flex-col items-center justify-center text-emerald-400 group-hover/thumb:scale-105 transition-transform">
+                                  <Video className="w-6 h-6" />
+                                  <span className="text-[8px] font-black uppercase tracking-wider text-white mt-0.5">Video</span>
                                 </div>
-                              </>
-                            )}
-                          </button>
-                        )}
+                              ) : item.mediaType === "FILE" ? (
+                                <div className="w-full h-full bg-slate-100 flex flex-col items-center justify-center text-slate-700 group-hover/thumb:scale-105 transition-transform">
+                                  <FileText className="w-6 h-6 text-emerald-600" />
+                                  <span className="text-[8px] font-black uppercase tracking-wider text-slate-600 mt-0.5">File</span>
+                                </div>
+                              ) : (
+                                <>
+                                  <img
+                                    src={itemImgSrc}
+                                    alt={item.mediaCaption || item.name}
+                                    onError={(e) => {
+                                      const target = e.currentTarget;
+                                      if (target.src !== fallbackSrc) {
+                                        target.src = fallbackSrc;
+                                      }
+                                    }}
+                                    data-testid={`item-image-${item.isService ? "service" : "product"}`}
+                                    className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-300"
+                                  />
+                                  <div className="absolute inset-0 bg-black/0 group-hover/thumb:bg-black/25 flex items-center justify-center transition-colors">
+                                    <Maximize2 className="w-4 h-4 text-white opacity-0 group-hover/thumb:opacity-100 transition-opacity drop-shadow-sm" />
+                                  </div>
+                                </>
+                              )}
+                            </button>
+                          );
+                        })()}
 
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-2">

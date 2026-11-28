@@ -12,6 +12,7 @@ import {
   ALL_SUBCATEGORIES, 
   ALL_BUSINESS_TYPES 
 } from "@/lib/taxonomy";
+import { findOrCreateCustomCategory, validateCustomCategoryInput } from "@/lib/categories";
 import { getCountryConfig } from "@/lib/country-address-config";
 import { invalidateBusinessesFeedCache } from "@/app/api/businesses/route";
 
@@ -59,22 +60,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Owner name is required" }, { status: 400 });
     }
 
-    const effectiveCategory = (category && typeof category === "string") ? category : (body.mainCategory && typeof body.mainCategory === "string") ? body.mainCategory : null;
-    if (!effectiveCategory) {
-      return NextResponse.json({ error: "Business category is required" }, { status: 400 });
-    }
+    const hasCustomCategory = Boolean(
+      (customCategoryName && typeof customCategoryName === "string" && customCategoryName.trim()) ||
+      (body.isCustomCategory && customCategoryName)
+    );
 
-    // 1.1 Controlled 3-Tier Category Validation
-    const mainCategory = body.mainCategory || effectiveCategory;
-    const subCategory = body.subCategory || null;
-    const businessType = body.businessType || null;
+    if (hasCustomCategory) {
+      const catVal = validateCustomCategoryInput(customCategoryName);
+      if (!catVal.valid) {
+        return NextResponse.json({ error: catVal.error }, { status: 400 });
+      }
+    } else {
+      const effectiveCategory = (category && typeof category === "string") ? category : (body.mainCategory && typeof body.mainCategory === "string") ? body.mainCategory : null;
+      if (!effectiveCategory) {
+        return NextResponse.json({ error: "Business category is required" }, { status: 400 });
+      }
 
-    const taxonomyValidation = validateCategoryHierarchy(mainCategory, subCategory, businessType);
-    if (!taxonomyValidation.isValid) {
-      return NextResponse.json(
-        { error: taxonomyValidation.error || "Invalid business category classification." },
-        { status: 400 }
-      );
+      // 1.1 Controlled 3-Tier Category Validation
+      const mainCategory = body.mainCategory || effectiveCategory;
+      const subCategory = body.subCategory || null;
+      const businessType = body.businessType || null;
+
+      const taxonomyValidation = validateCategoryHierarchy(mainCategory, subCategory, businessType);
+      if (!taxonomyValidation.isValid) {
+        return NextResponse.json(
+          { error: taxonomyValidation.error || "Invalid business category classification." },
+          { status: 400 }
+        );
+      }
     }
 
     // 1.2 Structured Location Validation
@@ -292,27 +305,44 @@ export async function POST(request: Request) {
         });
       }
 
+      let resolvedCustomCat: any = null;
+      if (hasCustomCategory) {
+        resolvedCustomCat = await findOrCreateCustomCategory(
+          {
+            name: customCategoryName.trim(),
+            parentCategory: body.mainCategory || "other_business",
+            createdById: u.id,
+          },
+          tx
+        );
+      }
+
+      const mainCategory = hasCustomCategory ? (body.mainCategory || "other_business") : (body.mainCategory || category || "services");
+      const subCategory = hasCustomCategory ? null : (body.subCategory || null);
+      const businessType = hasCustomCategory ? null : (body.businessType || null);
+
       const resolvedMain = ALL_MAIN_CATEGORIES[mainCategory];
       const resolvedType = businessType ? ALL_BUSINESS_TYPES[businessType] : null;
       const resolvedSub = subCategory ? ALL_SUBCATEGORIES[subCategory] : null;
 
-      const customCat = (mainCategory === "other_business" && customCategoryName && typeof customCategoryName === "string")
-        ? customCategoryName.trim()
-        : null;
-
-      const finalCatDisplay = customCat || resolvedType?.name || resolvedSub?.name || resolvedMain?.name || categoryDisplay || "Local Business";
-      const finalCatDisplayRw = resolvedType?.nameRw || resolvedSub?.nameRw || resolvedMain?.nameRw || categoryDisplayRw || "Ubucuruzi bw'Agace";
+      const finalCatDisplay = resolvedCustomCat
+        ? resolvedCustomCat.name
+        : (resolvedType?.name || resolvedSub?.name || resolvedMain?.name || categoryDisplay || "Local Business");
+      const finalCatDisplayRw = resolvedCustomCat
+        ? (resolvedCustomCat.nameRw || resolvedCustomCat.name)
+        : (resolvedType?.nameRw || resolvedSub?.nameRw || resolvedMain?.nameRw || categoryDisplayRw || "Ubucuruzi bw'Agace");
 
       const b = await tx.business.create({
         data: {
           name: name.trim(),
           nameRw: nameRw?.trim() || name.trim(),
           mainCategory: mainCategory,
-          category: mainCategory,
+          category: resolvedCustomCat ? resolvedCustomCat.slug : mainCategory,
+          customCategoryId: resolvedCustomCat ? resolvedCustomCat.id : null,
           subCategory: subCategory,
           businessType: businessType,
-          businessTypeDisplay: customCat || resolvedType?.name || null,
-          businessTypeDisplayRw: resolvedType?.nameRw || null,
+          businessTypeDisplay: resolvedCustomCat ? resolvedCustomCat.name : (resolvedType?.name || null),
+          businessTypeDisplayRw: resolvedCustomCat ? (resolvedCustomCat.nameRw || resolvedCustomCat.name) : (resolvedType?.nameRw || null),
           categoryDisplay: finalCatDisplay,
           categoryDisplayRw: finalCatDisplayRw,
           description: description?.trim() || "Neighborhood micro-business registered directly on MOSA.",

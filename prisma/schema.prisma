@@ -128,6 +128,7 @@ model User {
   feePromotionsCreated FeePromotion[]        @relation("AdminFeePromotions")
   assignedMosaDirectMessages MosaDirectMessage[] @relation("AssignedMosaDirect")
   mfaProfile           AdminMfaProfile?
+  customCategories     CustomCategory[]      @relation("UserCustomCategories")
 
   @@index([phone])
   @@index([email])
@@ -172,6 +173,31 @@ model AdminMfaProfile {
   updatedAt     DateTime  @updatedAt
 
   @@index([userId])
+}
+
+model CustomCategory {
+  id             String     @id @default(cuid())
+  name           String
+  nameRw         String?
+  slug           String     @unique
+  normalizedName String     @unique
+  parentCategory String?    @default("other_business")
+  description    String?
+  status         String     @default("ACTIVE") // ACTIVE, PENDING_REVIEW, MERGED, ARCHIVED
+  usageCount     Int        @default(1)
+  createdById    String?
+  createdBy      User?      @relation("UserCustomCategories", fields: [createdById], references: [id], onDelete: SetNull)
+  reviewedById   String?
+  reviewedAt     DateTime?
+  adminNotes     String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  businesses     Business[] @relation("BusinessCustomCategory")
+
+  @@index([slug])
+  @@index([normalizedName])
+  @@index([status])
 }
 
 // 7-Tier Geographic Hierarchy Models for Rwanda & Regional Expansion
@@ -386,6 +412,8 @@ model Business {
   businessType       String?
   businessTypeDisplay String?
   businessTypeDisplayRw String?
+  customCategoryId   String?
+  customCategory     CustomCategory?    @relation("BusinessCustomCategory", fields: [customCategoryId], references: [id])
   lastConfirmedAt    DateTime?
   confirmationIntervalDays Int          @default(60)
   healthScore        Int                @default(0)
@@ -433,6 +461,7 @@ model Business {
   renewalNotificationLogs RenewalNotificationLog[]
 
   @@index([category])
+  @@index([customCategoryId])
   @@index([renewalStatus])
   @@index([registrationExpiresAt])
   @@index([mainCategory])

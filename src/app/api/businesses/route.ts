@@ -168,6 +168,8 @@ export async function GET(request: Request) {
         OR: [
           { mainCategory },
           { category: mainCategory },
+          { customCategory: { slug: mainCategory } },
+          { customCategory: { name: { equals: mainCategory, mode: "insensitive" } } },
         ],
       });
     } else if (category && category !== "all") {
@@ -176,6 +178,8 @@ export async function GET(request: Request) {
         OR: [
           { mainCategory: category },
           { category },
+          { customCategory: { slug: category } },
+          { customCategory: { name: { equals: category, mode: "insensitive" } } },
         ],
       });
     }
@@ -295,6 +299,7 @@ export async function GET(request: Request) {
         { categoryDisplayRw: { contains: term, mode: "insensitive" as const } },
         { businessTypeDisplay: { contains: term, mode: "insensitive" as const } },
         { businessTypeDisplayRw: { contains: term, mode: "insensitive" as const } },
+        { customCategory: { name: { contains: term, mode: "insensitive" as const } } },
         { businessType: { contains: term, mode: "insensitive" as const } },
         { subCategory: { contains: term, mode: "insensitive" as const } },
         { nearestLandmark: { contains: term, mode: "insensitive" as const } },

@@ -8,6 +8,7 @@ import { VerificationBadge, DataStatusBadge } from "@/components/common/Badge";
 import { MapPin, Phone, MessageCircle, Clock, ChevronRight, Tag, Briefcase, Navigation } from "lucide-react";
 
 import { isVideoMedia, isLegacyBagPlaceholder } from "@/lib/media-upload";
+import { getCategoryFallbackCover } from "@/lib/media-fallback";
 
 interface BusinessCardProps {
   business: Business;
@@ -40,9 +41,11 @@ export function BusinessCard({ business, variant = "standard", className = "" }:
   // 1. Explicit business cover image or video
   // 2. Verified business gallery photo
   // 3. Featured product or service item photo
+  // 4. Curated category fallback cover
+  const fallbackCover = getCategoryFallbackCover(business.mainCategory || business.category);
   const visualMediaUrl = hasValidCover
     ? business.coverImage
-    : (validPhoto || validProductWithMedia?.mediaUrl || null);
+    : (validPhoto || validProductWithMedia?.mediaUrl || fallbackCover);
 
   const isVideo = Boolean(visualMediaUrl && isVideoMedia(visualMediaUrl));
   const visualSourceProduct = !hasValidCover && !validPhoto && validProductWithMedia ? validProductWithMedia : null;
@@ -65,6 +68,12 @@ export function BusinessCard({ business, variant = "standard", className = "" }:
             <img
               src={visualMediaUrl}
               alt={displayName}
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (target.src !== fallbackCover) {
+                  target.src = fallbackCover;
+                }
+              }}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
               loading="lazy"
             />

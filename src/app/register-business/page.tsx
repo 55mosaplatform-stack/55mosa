@@ -204,6 +204,7 @@ export default function RegisterBusinessPage() {
   const [dismissedSuggestion, setDismissedSuggestion] = useState(false);
   const [customActivityInput, setCustomActivityInput] = useState("");
   const [showSecondaryActivities, setShowSecondaryActivities] = useState(false);
+  const [isAddingCustomCategory, setIsAddingCustomCategory] = useState(false);
 
   // Media upload refs & states
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -637,12 +638,20 @@ export default function RegisterBusinessPage() {
     if (!formData.name.trim()) {
       errors.name = t.registration.errors.nameRequired;
     }
-    const catVal = validateCategoryHierarchy(formData.mainCategory, formData.subCategory, formData.businessType);
-    if (!catVal.isValid) {
-      errors.category = catVal.error || "Please select a valid 3-tier category hierarchy";
-    }
-    if (formData.mainCategory === "other_business" && !formData.customCategoryName.trim()) {
-      errors.customCategoryName = "Please describe your custom business activity or specialization";
+    if (isAddingCustomCategory) {
+      if (!formData.customCategoryName.trim() || formData.customCategoryName.trim().length < 2) {
+        errors.customCategoryName = lang === "rw"
+          ? "Nyamuneka andika izina ry'icyiciro cy'ubucuruzi bwawe (nibura inyuguti 2)."
+          : "Please specify your custom business category name (at least 2 characters).";
+      }
+    } else {
+      const catVal = validateCategoryHierarchy(formData.mainCategory, formData.subCategory, formData.businessType);
+      if (!catVal.isValid) {
+        errors.category = catVal.error || "Please select a valid 3-tier category hierarchy";
+      }
+      if (formData.mainCategory === "other_business" && !formData.customCategoryName.trim()) {
+        errors.customCategoryName = "Please describe your custom business activity or specialization";
+      }
     }
 
     setFieldErrors(errors);
@@ -772,10 +781,12 @@ export default function RegisterBusinessPage() {
         id: "category",
         label: "Category Classification",
         valid: Boolean(
-          formData.mainCategory && 
-          formData.subCategory && 
-          formData.businessType &&
-          (formData.mainCategory !== "other_business" || formData.customCategoryName.trim())
+          (isAddingCustomCategory && formData.customCategoryName.trim().length >= 2) ||
+          (!isAddingCustomCategory &&
+            formData.mainCategory && 
+            formData.subCategory && 
+            formData.businessType &&
+            (formData.mainCategory !== "other_business" || formData.customCategoryName.trim()))
         ),
         step: 1,
       },
@@ -1321,141 +1332,199 @@ export default function RegisterBusinessPage() {
                   </div>
                 </div>
 
-                {/* Category Search Filter */}
-                <div className="relative">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                  <input
-                    type="text"
-                    placeholder="Search 24 business categories (e.g. food, boutique, legal, farm, tech, other)..."
-                    value={categorySearchQuery}
-                    onChange={(e) => setCategorySearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 rounded-xl bg-white border border-slate-200 text-xs font-semibold focus:border-emerald-500 outline-none"
-                  />
-                  {categorySearchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setCategorySearchQuery("")}
-                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Visual Category Cards Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-64 overflow-y-auto p-1 border border-slate-200/60 rounded-xl bg-white/70">
-                  {filteredCategories.map((cat) => {
-                    const isSelected = formData.mainCategory === cat.id;
-                    const IconComponent = CATEGORY_ICONS[cat.icon] || Store;
-                    return (
+                {isAddingCustomCategory ? (
+                  <div className="p-5 rounded-2xl bg-amber-50/95 border-2 border-amber-300 space-y-4 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/80 pb-3">
+                      <div>
+                        <span className="text-xs font-black uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+                          <Tag className="w-4 h-4 text-amber-700" />
+                          <span>{lang === "rw" ? "Ongeramo Icyiciro Gishya cy'Ubucuruzi" : "Add Your Custom Business Category"}</span>
+                          <span className="text-rose-600">*</span>
+                        </span>
+                        <p className="text-[11px] text-amber-900/80 mt-0.5">
+                          {lang === "rw"
+                            ? "Icyiciro cy'ubucuruzi bwawe ntikirimo? Cyandike hano gihite cyemerwa kandi gikoreshwe kuri 55 MOSA."
+                            : "Can't find your category? Specify it here to register without picking an inaccurate category."}
+                        </p>
+                      </div>
                       <button
-                        key={cat.id}
                         type="button"
-                        onClick={() => handleMainCategoryChange(cat.id)}
-                        className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between gap-1.5 cursor-pointer ${
-                          isSelected
-                            ? "bg-emerald-50 border-emerald-500 text-emerald-950 ring-2 ring-emerald-500/20 shadow-xs"
-                            : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/60 text-slate-700"
-                        }`}
+                        onClick={() => {
+                          setIsAddingCustomCategory(false);
+                          setFormData({
+                            ...formData,
+                            customCategoryName: "",
+                            mainCategory: "retail_shops",
+                            subCategory: "food_grocery",
+                            businessType: "grocery_shop",
+                          });
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-bold transition shadow-2xs self-start sm:self-auto cursor-pointer"
                       >
-                        <div className="flex items-center justify-between w-full">
-                          <div className={`p-1.5 rounded-lg ${isSelected ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"}`}>
-                            <IconComponent className="w-3.5 h-3.5" />
-                          </div>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600" />}
-                        </div>
-                        <div>
-                          <div className="text-[11px] font-bold line-clamp-1">
-                            {getTaxonomyLabel(cat)}
-                          </div>
-                          <div className="text-[9px] text-slate-500 font-medium line-clamp-1">
-                            {cat.subcategories.length} subcategories
-                          </div>
-                        </div>
+                        {lang === "rw" ? "← Subira ku byiciro bisanzwe" : "← Browse Standard Categories"}
                       </button>
-                    );
-                  })}
-                </div>
+                    </div>
 
-                {/* Cascading Subcategory & Business Type Selectors */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Subcategory / Domain <span className="text-rose-600">*</span>
-                    </label>
-                    <select
-                      value={formData.subCategory}
-                      onChange={(e) => handleSubCategoryChange(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold focus:border-emerald-500 outline-none bg-white shadow-xs"
-                    >
-                      {availableSubcategories.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {getTaxonomyLabel(s)}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold text-amber-950">
+                        {lang === "rw" ? "Izina ry'Icyiciro cy'Ubucuruzi" : "Category Name"} <span className="text-rose-600">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        data-testid="custom-category-input"
+                        placeholder={lang === "rw" ? "urugero: Gutunganya Impu, Amashanyarazi y'Izuba, Gufotora n'Indege Ntoya (Drone)" : "e.g. Commercial Drone Surveying, Leather Tannery, Solar Installation, Specialized Welding"}
+                        value={formData.customCategoryName}
+                        onChange={(e) => {
+                          setFormData({ ...formData, customCategoryName: e.target.value });
+                          if (fieldErrors.customCategoryName) setFieldErrors({ ...fieldErrors, customCategoryName: "" });
+                        }}
+                        className="w-full px-4 py-3 rounded-xl bg-white border border-amber-300 text-sm font-bold text-slate-900 focus:border-emerald-600 outline-none shadow-xs"
+                      />
+                      {fieldErrors.customCategoryName && (
+                        <span className="text-xs text-rose-600 font-semibold block">
+                          {fieldErrors.customCategoryName}
+                        </span>
+                      )}
+                      <p className="text-[11px] text-amber-800">
+                        {lang === "rw"
+                          ? "Iki cyiciro gihita cyemezwa ku bucuruzi bwawe, kikazagaragara ku ikarita y'ubucuruzi bwawe no mu gushakisha kuri 55 MOSA."
+                          : "This category will be saved, deduplicated, linked to your business profile, and made available for future registrations and search filters."}
+                      </p>
+                    </div>
                   </div>
+                ) : (
+                  <>
+                    {/* Category Search Filter */}
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                      <input
+                        type="text"
+                        placeholder="Search 24 business categories (e.g. food, boutique, legal, farm, tech, other)..."
+                        value={categorySearchQuery}
+                        onChange={(e) => setCategorySearchQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 rounded-xl bg-white border border-slate-200 text-xs font-semibold focus:border-emerald-500 outline-none"
+                      />
+                      {categorySearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setCategorySearchQuery("")}
+                          className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Specific Business Type <span className="text-rose-600">*</span>
-                    </label>
-                    <select
-                      value={formData.businessType}
-                      onChange={(e) => handleBusinessTypeChange(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold focus:border-emerald-500 outline-none bg-white shadow-xs"
-                    >
-                      {availableBusinessTypes.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {getTaxonomyLabel(t)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+                    {/* Visual Category Cards Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-64 overflow-y-auto p-1 border border-slate-200/60 rounded-xl bg-white/70">
+                      {filteredCategories.map((cat) => {
+                        const isSelected = formData.mainCategory === cat.id;
+                        const IconComponent = CATEGORY_ICONS[cat.icon] || Store;
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => handleMainCategoryChange(cat.id)}
+                            className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between gap-1.5 cursor-pointer ${
+                              isSelected
+                                ? "bg-emerald-50 border-emerald-500 text-emerald-950 ring-2 ring-emerald-500/20 shadow-xs"
+                                : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/60 text-slate-700"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between w-full">
+                              <div className={`p-1.5 rounded-lg ${isSelected ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"}`}>
+                                <IconComponent className="w-3.5 h-3.5" />
+                              </div>
+                              {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600" />}
+                            </div>
+                            <div>
+                              <div className="text-[11px] font-bold line-clamp-1">
+                                {getTaxonomyLabel(cat)}
+                              </div>
+                              <div className="text-[9px] text-slate-500 font-medium line-clamp-1">
+                                {cat.subcategories.length} subcategories
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
 
-                {/* Classification Breadcrumb */}
-                <div className="flex items-center gap-1.5 text-xs text-slate-700 pt-1 flex-wrap">
-                  <span className="font-bold text-slate-500 text-[11px]">Classification:</span>
-                  <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 font-bold text-slate-800 text-[11px]">
-                    {getTaxonomyLabel(currentMain)}
-                  </span>
-                  <span className="text-slate-400">&rarr;</span>
-                  <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 font-bold text-slate-800 text-[11px]">
-                    {getTaxonomyLabel(currentSub)}
-                  </span>
-                  <span className="text-slate-400">&rarr;</span>
-                  <span className="px-2 py-0.5 rounded-md bg-emerald-100 border border-emerald-300 font-bold text-emerald-900 text-[11px]">
-                    {getTaxonomyLabel(currentType)}
-                  </span>
-                </div>
+                    {/* Cascading Subcategory & Business Type Selectors */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Subcategory / Domain <span className="text-rose-600">*</span>
+                        </label>
+                        <select
+                          value={formData.subCategory}
+                          onChange={(e) => handleSubCategoryChange(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold focus:border-emerald-500 outline-none bg-white shadow-xs"
+                        >
+                          {availableSubcategories.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {getTaxonomyLabel(s)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                {/* Custom Business Activity Input for "other_business" */}
-                {formData.mainCategory === "other_business" && (
-                  <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-300/80 space-y-2 mt-2">
-                    <label className="block text-xs font-bold text-amber-950">
-                      Specify Your Custom Business Activity / Specialization <span className="text-rose-600">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Commercial Drone Surveying, Leather Tannery, Solar Heating"
-                      value={formData.customCategoryName}
-                      onChange={(e) => {
-                        setFormData({ ...formData, customCategoryName: e.target.value });
-                        if (fieldErrors.customCategoryName) setFieldErrors({ ...fieldErrors, customCategoryName: "" });
-                      }}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-amber-300 text-xs font-bold text-slate-900 focus:border-emerald-600 outline-none"
-                    />
-                    {fieldErrors.customCategoryName && (
-                      <span className="text-xs text-rose-600 font-semibold block">
-                        {fieldErrors.customCategoryName}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Specific Business Type <span className="text-rose-600">*</span>
+                        </label>
+                        <select
+                          value={formData.businessType}
+                          onChange={(e) => handleBusinessTypeChange(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold focus:border-emerald-500 outline-none bg-white shadow-xs"
+                        >
+                          {availableBusinessTypes.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {getTaxonomyLabel(t)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Classification Breadcrumb */}
+                    <div className="flex items-center gap-1.5 text-xs text-slate-700 pt-1 flex-wrap">
+                      <span className="font-bold text-slate-500 text-[11px]">Classification:</span>
+                      <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 font-bold text-slate-800 text-[11px]">
+                        {getTaxonomyLabel(currentMain)}
                       </span>
-                    )}
-                    <p className="text-[11px] text-amber-800">
-                      This will be shown on your business profile card and indexed in global search discovery.
-                    </p>
-                  </div>
+                      <span className="text-slate-400">&rarr;</span>
+                      <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 font-bold text-slate-800 text-[11px]">
+                        {getTaxonomyLabel(currentSub)}
+                      </span>
+                      <span className="text-slate-400">&rarr;</span>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-100 border border-emerald-300 font-bold text-emerald-900 text-[11px]">
+                        {getTaxonomyLabel(currentType)}
+                      </span>
+                    </div>
+
+                    {/* Prominent Self-Service Category Expansion Trigger */}
+                    <div className="pt-2 border-t border-emerald-200/50 flex items-center justify-between">
+                      <button
+                        type="button"
+                        data-testid="add-custom-category-btn"
+                        onClick={() => {
+                          setIsAddingCustomCategory(true);
+                          setFormData({
+                            ...formData,
+                            mainCategory: "other_business",
+                            subCategory: "other_specialized",
+                            businessType: "other_unlisted_type",
+                          });
+                        }}
+                        className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-800 bg-white hover:bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 shadow-2xs transition cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{lang === "rw" ? "Icyiciro cy'ubucuruzi bwanjye ntikirimo? Ongeramo icyiciro." : "My business category is not listed? Add a category."}</span>
+                      </button>
+                    </div>
+                  </>
                 )}
 
                 {fieldErrors.category && (
